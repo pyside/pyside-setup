@@ -124,7 +124,7 @@ class TicTacToe(QWidget):
 
         painter.setPen(QPen(Qt.yellow, 3))
 
-        for position in range(9):
+        for position in range(0, 8, 3):
             if (self._state[position] != EMPTY
                 and self._state[position + 1] == self._state[position]
                 and self._state[position + 2] == self._state[position]):
@@ -137,7 +137,7 @@ class TicTacToe(QWidget):
                 and self._state[position + 3] == self._state[position]
                 and self._state[position + 6] == self._state[position]):
                 x = self._cell_rect(position).center().x()
-                painter.drawLine(x, 0, x, height())
+                painter.drawLine(x, 0, x, self.height())
                 self._turn_number = 9
 
         if (self._state[0] != EMPTY and self._state[4] == self._state[0]
