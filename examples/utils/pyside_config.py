@@ -36,11 +36,11 @@ options = []
 options.append(("--shiboken-module-path",
                 lambda: find_shiboken_module(),
                 shiboken_module_error,
-                "Print shiboken module location"))
+                f"Print {SHIBOKEN} module location"))
 options.append(("--shiboken-generator-path",
                 lambda: find_shiboken_generator(),
                 shiboken_generator_error,
-                "Print shiboken generator location"))
+                f"Print {SHIBOKEN} generator location"))
 options.append(("--pyside-path", lambda: find_pyside(), pyside_error,
                 f"Print {PYSIDE_MODULE} location"))
 
@@ -51,11 +51,11 @@ options.append(("--python-include-path",
 options.append(("--shiboken-generator-include-path",
                 lambda: get_package_include_path(Package.SHIBOKEN_GENERATOR),
                 pyside_error,
-                "Print shiboken generator include paths"))
+                f"Print {SHIBOKEN} generator include paths"))
 options.append(("--pyside-include-path",
                 lambda: get_package_include_path(Package.PYSIDE_MODULE),
                 pyside_error,
-                "Print PySide6 include paths"))
+                f"Print {PYSIDE_MODULE} include paths"))
 
 options.append(("--python-link-flags-qmake", lambda: python_link_flags_qmake(), python_link_error,
                 "Print python link flags for qmake"))
@@ -64,10 +64,10 @@ options.append(("--python-link-flags-cmake", lambda: python_link_flags_cmake(), 
 
 options.append(("--shiboken-module-qmake-lflags",
                 lambda: get_package_qmake_lflags(Package.SHIBOKEN_MODULE), pyside_error,
-                "Print shiboken6 shared library link flags for qmake"))
+                f"Print {SHIBOKEN} shared library link flags for qmake"))
 options.append(("--pyside-qmake-lflags",
                 lambda: get_package_qmake_lflags(Package.PYSIDE_MODULE), pyside_error,
-                "Print PySide6 shared library link flags for qmake"))
+                f"Print {PYSIDE_MODULE} shared library link flags for qmake"))
 
 options.append(("--shiboken-module-shared-libraries-qmake",
                 lambda: get_shared_libraries_qmake(Package.SHIBOKEN_MODULE), pyside_libs_error,
