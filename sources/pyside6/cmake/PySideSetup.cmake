@@ -8,12 +8,17 @@ set(QT_MAJOR_VERSION 6)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../shiboken6/cmake")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../shiboken6_generator/cmake")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/Macros")
 
 # TODO: Don't directly include, ShibokenHelpers but rather pick it up from the installed Shiboken
 # package. Needs to support top-level build as well (Shiboken is not yet installed in that case).
 include(ShibokenHelpers)
+include(ShibokenGeneratorCMakeHelpers)
+include(ShibokenGeneratorSbomHelpers)
+include(ShibokenGeneratorTargetHelpers)
 include(PySideHelpers)
+include(PySideSbomWheelMapping)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     pyside_internal_get_ios_sdk_path(ios_sdk_path)

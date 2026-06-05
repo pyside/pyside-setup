@@ -12,7 +12,7 @@ macro(setup_clang)
         list(PREPEND CMAKE_FIND_ROOT_PATH "$ENV{CLANG_INSTALL_DIR}")
     endif()
 
-    find_package(Clang CONFIG REQUIRED)
+    qfp_find_package(Clang CONFIG REQUIRED PROVIDED_TARGETS libclang)
     # Need to explicitly handle the version check, because the Clang package doesn't.
     if (LLVM_PACKAGE_VERSION AND LLVM_PACKAGE_VERSION VERSION_LESS "9.0")
         message(FATAL_ERROR "You need LLVM version 9.0 or greater to build.")

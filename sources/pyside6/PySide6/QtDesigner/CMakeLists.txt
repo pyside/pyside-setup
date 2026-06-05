@@ -69,3 +69,8 @@ create_pyside_module(NAME QtDesigner
                      TYPESYSTEM_NAME "${CMAKE_CURRENT_BINARY_DIR}/typesystem_designer.xml")
 
 install(FILES ${PYSIDE_PACKAGE_SOURCE_DIR}/qpydesignerextensions.h DESTINATION include/PySide6/QtDesigner)
+qfp_sbom_add_files(QtDesigner
+    FILES ${PYSIDE_PACKAGE_SOURCE_DIR}/qpydesignerextensions.h
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "include/PySide6/QtDesigner"
+)

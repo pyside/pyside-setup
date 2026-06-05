@@ -3,6 +3,9 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}"
 
 include(ShibokenHelpers)
 include(ShibokenGeneratorHelpers)
+include(ShibokenGeneratorCMakeHelpers)
+include(ShibokenGeneratorSbomHelpers)
+include(ShibokenGeneratorTargetHelpers)
 
 shiboken_internal_disable_pkg_config_if_needed()
 shiboken_internal_detect_if_cross_building()
@@ -16,6 +19,9 @@ shiboken_internal_set_up_extra_dependency_paths()
 set(QT_MAJOR_VERSION 6)
 message(STATUS "Using Qt ${QT_MAJOR_VERSION}")
 find_package(Qt6 REQUIRED COMPONENTS Core)
+
+# Must be called before any packages are looked up with qfp_find_package.
+qfp_setup_sbom()
 
 if(QUIET_BUILD)
     set_quiet_build()

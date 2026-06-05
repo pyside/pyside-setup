@@ -1,14 +1,31 @@
 # Copyright (C) 2026 The Qt Company Ltd.
 # SPDX-License-Identifier: BSD-3-Clause
 
-project(QtQmlFeatures)
+file(RELATIVE_PATH relative_python_site_packages
+    "${CMAKE_INSTALL_PREFIX}" "${PYTHON_SITE_PACKAGES}")
+set(install_path "${relative_python_site_packages}/PySide6")
 
 if(IOS)
     set(library_type STATIC)
+    set(artifact_type ARCHIVE)
+    set(install_destination "PySide6")
+    set(library_install_path "${install_destination}")
 else()
     set(library_type MODULE)
+    set(artifact_type LIBRARY)
+    set(install_destination "${PYTHON_SITE_PACKAGES}/PySide6")
+    set(library_install_path "${install_path}")
 endif()
-add_library(QtQmlFeatures ${library_type} pyside_feature_module.cpp)
+
+qfp_sbom_get_python_runtime_target(python_runtime_sbom_target)
+qfp_add_library(QtQmlFeatures
+    FUNCTION_ARGS
+        ${library_type} pyside_feature_module.cpp
+    LIBRARY_PATH "${library_install_path}"
+    SBOM_ARGS
+        SBOM_ENTITY_TYPE LIBRARY
+        SBOM_DEPENDENCIES ${python_runtime_sbom_target}
+)
 
 if(IOS)
     set_target_properties(QtQmlFeatures PROPERTIES
@@ -70,13 +87,11 @@ if(NOT (PYSIDE_IS_CROSS_BUILD OR DISABLE_PYI))
 
     install(FILES "${PYSIDE_PACKAGE_BINARY_DIR}/QtQmlFeatures.pyi"
             DESTINATION "${PYTHON_SITE_PACKAGES}/PySide6")
+    qfp_sbom_add_files(QtQmlFeatures
+        FILES "${PYSIDE_PACKAGE_BINARY_DIR}/QtQmlFeatures.pyi"
+        FILE_TYPE "SOURCE"
+        INSTALL_PATH "${install_path}"
+    )
 endif()
 
-if(IOS)
-    set(artifact_type ARCHIVE)
-    set(install_destination "PySide6")
-else()
-    set(artifact_type LIBRARY)
-    set(install_destination "${PYTHON_SITE_PACKAGES}/PySide6")
-endif()
 install(TARGETS QtQmlFeatures ${artifact_type} DESTINATION ${install_destination})

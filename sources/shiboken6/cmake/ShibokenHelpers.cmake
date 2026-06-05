@@ -583,7 +583,7 @@ macro(compute_config_py_values
             set(QT_MACOS_DEPLOYMENT_TARGET
                 "__qt_macos_min_deployment_target__ = '${darwin_target}'")
         endif()
-    elseif(APPLE)
+    elseif(APPLE AND NOT PROJECT_NAME STREQUAL "pyside-tools")
         message(FATAL_ERROR "Qt6::Core should be found before calling this macro")
     endif()
 

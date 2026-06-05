@@ -47,11 +47,41 @@ macro(create_and_install_qt_javabindings)
     )
 
     install_jar(Qt${QT_MAJOR_VERSION}AndroidBindings
-        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/jar"
+        DESTINATION "lib/jar"
         COMPONENT Devel
     )
 
     # install other relevant Android jars from the Qt installation.
     # All the jars would be later packaged together with the Android wheels
     install(DIRECTORY ${QT6_INSTALL_PREFIX}/jar/ DESTINATION lib/jar)
+
+    qfp_sbom_get_commercial_or_bsd3_license(android_bindings_license_expression)
+    qfp_add_custom_sbom(PySideToolsAndroidBindings
+        LICENSE_CONCLUDED_EXPRESSION "${android_bindings_license_expression}"
+    )
+    get_target_property(android_bindings_jar Qt${QT_MAJOR_VERSION}AndroidBindings JAR_FILE)
+    qfp_sbom_add_files(PySideToolsAndroidBindings
+        FILES "${android_bindings_jar}"
+        SOURCE_FILES ${java_sources}
+        FILE_TYPE "ARCHIVE"
+        INSTALL_PATH "lib/jar"
+    )
+
+    get_filename_component(sdk_platform_dir "${sdk_jar_location}" DIRECTORY)
+    qfp_sbom_add_android_sdk_platform(PySideToolsAndroidBindings
+        SDK_PLATFORM_DIR "${sdk_platform_dir}"
+    )
+    qfp_sbom_add_jdk(PySideToolsAndroidBindings)
+
+    qfp_sbom_get_open_source_permissive_library_license(qt_library_license_expression)
+    qfp_add_sbom(PySideToolsQtAndroidJars
+        SBOM_ENTITY_TYPE CUSTOM_NO_INFIX
+        LICENSE_CONCLUDED_EXPRESSION "${qt_library_license_expression}"
+        MIRROR_LICENSE_DECLARED_EXPRESSION
+    )
+    qfp_sbom_add_directory_files(PySideToolsQtAndroidJars
+        DIRECTORY "${QT6_INSTALL_PREFIX}/jar/"
+        INSTALL_PATH "lib/jar"
+        FILE_TYPE "ARCHIVE"
+    )
 endmacro()

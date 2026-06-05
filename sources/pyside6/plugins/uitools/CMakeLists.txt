@@ -12,7 +12,12 @@ set(ui_plugin_src
     customwidget.cpp customwidget.h
 )
 
-add_library(uiplugin STATIC ${ui_plugin_src})
+qfp_add_library(uiplugin
+    FUNCTION_ARGS
+        STATIC ${ui_plugin_src}
+    NO_INSTALL
+)
+
 if(CMAKE_HOST_UNIX AND NOT CYGWIN)
     add_definitions(-fPIC)
 endif()

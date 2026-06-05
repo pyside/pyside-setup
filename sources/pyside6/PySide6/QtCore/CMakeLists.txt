@@ -299,3 +299,10 @@ endif()
 
 install(FILES ${PYSIDE_PACKAGE_SOURCE_DIR}/qtcorehelper.h ${PYSIDE_PACKAGE_SOURCE_DIR}/qiopipe.h
         DESTINATION include/PySide6/QtCore/)
+qfp_sbom_add_files(QtCore
+    FILES
+        ${PYSIDE_PACKAGE_SOURCE_DIR}/qtcorehelper.h
+        ${PYSIDE_PACKAGE_SOURCE_DIR}/qiopipe.h
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "include/PySide6/QtCore"
+)

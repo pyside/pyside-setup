@@ -35,3 +35,49 @@ function(pyside_tools_internal_set_up_extra_dependency_paths)
         endif()
     endforeach()
 endfunction()
+
+# Returns "Essentials" or "Addons": the wheel that ships the Qt tool, according to
+# PYSIDE_QT_TOOLS_WHEEL_MODULES and the per-wheel module lists of PySideSbomWheelMapping.cmake.
+function(pyside_tools_get_qt_tool_wheel out_var tool_name)
+    foreach(entry IN LISTS PYSIDE_QT_TOOLS_WHEEL_MODULES)
+        string(REPLACE ":" ";" entry "${entry}")
+        list(GET entry 0 entry_tool)
+        list(GET entry 1 entry_module)
+        if(NOT entry_tool STREQUAL tool_name)
+            continue()
+        endif()
+        if(entry_module IN_LIST PYSIDE_ADDONS_WHEEL_MODULES)
+            set(${out_var} "Addons" PARENT_SCOPE)
+            return()
+        endif()
+        if(NOT entry_module IN_LIST PYSIDE_ESSENTIALS_WHEEL_MODULES)
+            message(WARNING "The module '${entry_module}' of the Qt tool '${tool_name}' is not "
+                "in the essentials or addons wheel module list, assuming the essentials wheel.")
+        endif()
+        set(${out_var} "Essentials" PARENT_SCOPE)
+        return()
+    endforeach()
+    message(WARNING "The Qt tool '${tool_name}' is missing from PYSIDE_QT_TOOLS_WHEEL_MODULES, "
+        "assuming the essentials wheel.")
+    set(${out_var} "Essentials" PARENT_SCOPE)
+endfunction()
+
+# Installs the given files into bin as executables, and returns the ones that don't exist.
+function(pyside_tools_install_executable_files out_missing_files)
+    set(missing_files "")
+    foreach(file IN LISTS ARGN)
+        if(EXISTS "${file}")
+            message(STATUS "Installing tool: ${file}")
+            install(FILES "${file}"
+                    DESTINATION bin
+                    PERMISSIONS
+                    OWNER_EXECUTE OWNER_WRITE OWNER_READ
+                    GROUP_EXECUTE GROUP_READ
+                    WORLD_EXECUTE WORLD_READ)
+        else()
+            list(APPEND missing_files "${file}")
+            message(WARNING "${file} does not exist. Hence, pyside6-${file} will not work")
+        endif()
+    endforeach()
+    set(${out_missing_files} "${missing_files}" PARENT_SCOPE)
+endfunction()

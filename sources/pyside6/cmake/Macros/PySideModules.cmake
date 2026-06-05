@@ -413,13 +413,31 @@ macro(create_pyside_module)
                         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                         COMMENT "Running generator for ${module_NAME}...")
 
+    file(RELATIVE_PATH relative_python_site_packages
+        "${CMAKE_INSTALL_PREFIX}" "${PYTHON_SITE_PACKAGES}")
+    set(install_path "${relative_python_site_packages}/PySide6")
+
     if(IOS)
         set(library_type STATIC)
+        set(artifact_type ARCHIVE)
+        set(install_destination "PySide6")
+        set(library_install_path "${install_destination}")
     else()
         set(library_type MODULE)
+        set(artifact_type LIBRARY)
+        set(install_destination "${PYTHON_SITE_PACKAGES}/PySide6")
+        set(library_install_path "${install_path}")
     endif()
-    add_library(${module_NAME} ${library_type} ${${module_SOURCES}}
-                                               ${${module_STATIC_SOURCES}})
+
+    qfp_sbom_get_python_runtime_target(python_runtime_sbom_target)
+    qfp_add_library(${module_NAME}
+        FUNCTION_ARGS
+            ${library_type} ${${module_SOURCES}} ${${module_STATIC_SOURCES}}
+        LIBRARY_PATH "${library_install_path}"
+        SBOM_ARGS
+            SBOM_ENTITY_TYPE LIBRARY
+            SBOM_DEPENDENCIES ${python_runtime_sbom_target}
+    )
 
     target_include_directories(${module_NAME}
         PRIVATE
@@ -498,23 +516,27 @@ macro(create_pyside_module)
 
         install(FILES "${CMAKE_CURRENT_BINARY_DIR}/../${module_NAME}.pyi"
                 DESTINATION "${PYTHON_SITE_PACKAGES}/PySide6")
+        qfp_sbom_add_files(${module_NAME}
+            FILES "${CMAKE_CURRENT_BINARY_DIR}/../${module_NAME}.pyi"
+            FILE_TYPE "SOURCE"
+            INSTALL_PATH "${install_path}"
+        )
     endif()
 
 
     # install
-    if(IOS)
-        set(artifact_type ARCHIVE)
-        set(install_destination "PySide6")
-    else()
-        set(artifact_type LIBRARY)
-        set(install_destination "${PYTHON_SITE_PACKAGES}/PySide6")
-    endif()
     install(TARGETS ${module_NAME} ${artifact_type} DESTINATION ${install_destination})
 
 
 
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/PySide6/${module_NAME}/pyside6_${lower_module_name}_python.h
             DESTINATION include/PySide6${pyside6_SUFFIX}/${module_NAME}/)
+    qfp_sbom_add_files(${module_NAME}
+        FILES
+            ${CMAKE_CURRENT_BINARY_DIR}/PySide6/${module_NAME}/pyside6_${lower_module_name}_python.h
+        FILE_TYPE "SOURCE"
+        INSTALL_PATH "include/PySide6${pyside6_SUFFIX}/${module_NAME}"
+    )
     file(GLOB typesystem_files ${CMAKE_CURRENT_SOURCE_DIR}/typesystem_*.xml ${typesystem_path})
 
 #   Copy typesystem files and remove module names from the <load-typesystem> element
@@ -528,7 +550,35 @@ macro(create_pyside_module)
         set (typesystem_target_file "${CMAKE_CURRENT_BINARY_DIR}/PySide6/typesystems/${typesystem_file_name}")
         file(WRITE "${typesystem_target_file}" "${typesystemXml}")
         install(FILES "${typesystem_target_file}" DESTINATION share/PySide6${pyside6_SUFFIX}/typesystems)
+        qfp_sbom_add_files(${module_NAME}
+            FILES "${typesystem_target_file}"
+            FILE_TYPE "SOURCE"
+            INSTALL_PATH "share/PySide6${pyside6_SUFFIX}/typesystems"
+        )
     endforeach()
+
+    # The glue and doc files are installed before the module target is created.
+    if(EXISTS ${${module_NAME}_glue})
+        qfp_sbom_add_files(${module_NAME}
+            FILES ${${module_NAME}_glue}
+            FILE_TYPE "SOURCE"
+            INSTALL_PATH "share/PySide6${pyside6_SUFFIX}/glue"
+        )
+    endif()
+    if(EXISTS ${${module_NAME}_doc})
+        qfp_sbom_add_files(${module_NAME}
+            FILES ${${module_NAME}_doc}
+            FILE_TYPE "DOCUMENTATION"
+            INSTALL_PATH "share/PySide6${pyside6_SUFFIX}/doc"
+        )
+    endif()
+    if(module_GLUE_SOURCES)
+        qfp_sbom_add_files(${module_NAME}
+            FILES ${module_GLUE_SOURCES}
+            FILE_TYPE "SOURCE"
+            INSTALL_PATH "share/PySide6${pyside6_SUFFIX}/typesystems/glue"
+        )
+    endif()
 endmacro()
 
 # Only add subdirectory if the associated Qt module is found.

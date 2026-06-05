@@ -67,3 +67,8 @@ create_pyside_module(NAME QtDataVisualization
 
 install(FILES ${PYSIDE_PACKAGE_SOURCE_DIR}/qtdatavisualization_helper.h
         DESTINATION include/PySide6/QtDataVisualization)
+qfp_sbom_add_files(QtDataVisualization
+    FILES ${PYSIDE_PACKAGE_SOURCE_DIR}/qtdatavisualization_helper.h
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "include/PySide6/QtDataVisualization"
+)

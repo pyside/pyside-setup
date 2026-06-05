@@ -68,7 +68,9 @@ endforeach()
 # now compile all modules.
 file(READ "${CMAKE_CURRENT_LIST_DIR}/pyside6_global.h" pyside6_global_contents)
 
-foreach(shortname IN LISTS all_module_shortnames)
+# Process a single Qt module.
+# Add its subdirectory when the module is found and generate its per-module global header.
+macro(process_pyside_module shortname)
     set(name "Qt${QT_MAJOR_VERSION}${shortname}")
     set(_qt_module_name "${name}")
     if ("${shortname}" STREQUAL "OpenGLFunctions")
@@ -91,7 +93,8 @@ foreach(shortname IN LISTS all_module_shortnames)
     set(module_header_content "${module_header_content}\n${pyside6_global_contents}")
     # AxContainer/AxServer from Active Qt do not have module headers
     if(NOT "${shortname}" STREQUAL "AxContainer" AND NOT "${shortname}" STREQUAL "OpenGLFunctions")
-        set(module_header_content "${module_header_content}\n#include <Qt${shortname}/Qt${shortname}>")
+        set(module_header_content
+            "${module_header_content}\n#include <Qt${shortname}/Qt${shortname}>")
     endif()
     set(post_header "${CMAKE_CURRENT_BINARY_DIR}/Qt${shortname}/Qt${shortname}_global.post.h")
     if(EXISTS "${post_header}")
@@ -99,9 +102,29 @@ foreach(shortname IN LISTS all_module_shortnames)
         set(module_header_content "${module_header_content}\n${post_header_content}")
     endif()
     file(WRITE ${module_header} "${module_header_content}")
+endmacro()
+
+# Collects modules that are not assigned to any of the wheel SBOM documents.
+set(pyside_unsassigned_sbom_modules "")
+
+# Process the modules in one pass per wheel SBOM document - essentials first, then addons, then
+# webengine, etc, so each module's target is recorded into the matching wheel SBOM document.
+# Each pass iterates all_module_shortnames in its original order, so the add_subdirectory ordering
+# is preserved within a pass.
+foreach(shortname IN LISTS all_module_shortnames)
+    if(shortname IN_LIST PYSIDE_ESSENTIALS_WHEEL_MODULES)
+        process_pyside_module("${shortname}")
+    endif()
 endforeach()
 
-# install
+# Added here so that it is recorded in the essentials SBOM document.
+if(NOT DISABLE_QtQmlFeatures)
+    add_subdirectory(QtQmlFeatures)
+endif()
+
+# The package files are installed here, so that they are part of the essentials SBOM document.
+# Their install rules need to come before the end of the document, because the SBOM is generated
+# at that point during installation.
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/__init__.py"
               "${CMAKE_CURRENT_BINARY_DIR}/_config.py"
               "${CMAKE_CURRENT_BINARY_DIR}/_git_pyside_version.py"
@@ -118,14 +141,118 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/templates/gui_common.xml
         DESTINATION share/PySide6${pyside_SUFFIX}/typesystems)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/templates/widgets_common.xml
         DESTINATION share/PySide6${pyside_SUFFIX}/typesystems)
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/templates/datavisualization_common.xml
-        DESTINATION share/PySide6${pyside_SUFFIX}/typesystems)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pyside6_global.h
         DESTINATION include/${BINDING_NAME}${pyside6_SUFFIX})
 
-if(NOT DISABLE_QtQmlFeatures)
-    add_subdirectory(QtQmlFeatures)
-endif()
+qfp_sbom_get_open_source_permissive_library_license(package_files_license_expression)
+qfp_sbom_get_relative_python_site_packages(relative_python_site_packages)
+set(package_install_path "${relative_python_site_packages}/${BINDING_NAME}${pyside6_SUFFIX}")
+qfp_add_custom_sbom(PySide6PackageFiles
+    LICENSE_CONCLUDED_EXPRESSION "${package_files_license_expression}"
+)
+qfp_sbom_add_files(PySide6PackageFiles
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/__init__.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/_config.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/_git_pyside_version.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/py.typed"
+        "${CMAKE_CURRENT_BINARY_DIR}/__feature__.pyi"
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "${package_install_path}"
+)
+qfp_sbom_add_directory_files(PySide6PackageFiles
+    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/support"
+    INSTALL_PATH "${package_install_path}"
+    FILE_TYPE "SOURCE"
+)
+qfp_sbom_add_files(PySide6PackageFiles
+    FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/templates/common.xml
+        ${CMAKE_CURRENT_SOURCE_DIR}/templates/core_common.xml
+        ${CMAKE_CURRENT_SOURCE_DIR}/templates/gui_common.xml
+        ${CMAKE_CURRENT_SOURCE_DIR}/templates/widgets_common.xml
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "share/PySide6${pyside_SUFFIX}/typesystems"
+)
+qfp_sbom_add_files(PySide6PackageFiles
+    FILES ${CMAKE_CURRENT_SOURCE_DIR}/pyside6_global.h
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "include/${BINDING_NAME}${pyside6_SUFFIX}"
+)
 
+# Close the essentials document and open the addons one.
+qfp_sbom_end_project()
+qfp_sbom_begin_project(
+    SBOM_PROJECT_NAME "PySide6-Addons"
+    LICENSE_DIR_PATHS "${qfp_license_dir_path}"
+    INSTALL_SBOM_DIR "share/sbom/PySide6-Addons"
+    PYPI_PURL_NAME "pyside6-addons"
+)
+
+foreach(shortname IN LISTS all_module_shortnames)
+    if(NOT shortname IN_LIST PYSIDE_ESSENTIALS_WHEEL_MODULES
+            AND NOT shortname IN_LIST PYSIDE_WEBENGINE_WHEEL_MODULES
+            AND NOT shortname IN_LIST PYSIDE_PDF_WHEEL_MODULES)
+        process_pyside_module("${shortname}")
+
+        if(NOT shortname IN_LIST PYSIDE_ADDONS_WHEEL_MODULES)
+            list(APPEND pyside_unsassigned_sbom_modules "Qt${shortname}")
+        endif()
+    endif()
+endforeach()
+
+# QtAsyncio is part of the addons wheel, so install it while the addons document is open.
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/QtAsyncio"
         DESTINATION "${PYTHON_SITE_PACKAGES}/${BINDING_NAME}${pyside6_SUFFIX}")
+qfp_add_custom_sbom(QtAsyncio
+    LICENSE_CONCLUDED_EXPRESSION "${package_files_license_expression}"
+)
+qfp_sbom_add_directory_files(QtAsyncio
+    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/QtAsyncio"
+    INSTALL_PATH "${package_install_path}"
+    FILE_TYPE "SOURCE"
+)
+
+# The template is shipped in the addons wheel with QtDataVisualization, see
+# module_QtDataVisualization() in build_scripts/wheel_files.py.
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/templates/datavisualization_common.xml
+        DESTINATION share/PySide6${pyside_SUFFIX}/typesystems)
+qfp_add_custom_sbom(PySide6AddonsPackageFiles
+    LICENSE_CONCLUDED_EXPRESSION "${package_files_license_expression}"
+)
+qfp_sbom_add_files(PySide6AddonsPackageFiles
+    FILES ${CMAKE_CURRENT_SOURCE_DIR}/templates/datavisualization_common.xml
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "share/PySide6${pyside_SUFFIX}/typesystems"
+)
+
+# The WebEngine and Pdf wheels get their own documents.
+foreach(wheel IN ITEMS WebEngine Pdf)
+    string(TOUPPER "${wheel}" wheel_upper)
+    string(TOLOWER "${wheel}" wheel_lower)
+    qfp_sbom_end_project()
+    qfp_sbom_begin_project(
+        SBOM_PROJECT_NAME "PySide6-${wheel}"
+        LICENSE_DIR_PATHS "${qfp_license_dir_path}"
+        INSTALL_SBOM_DIR "share/sbom/PySide6-${wheel}"
+        PYPI_PURL_NAME "pyside6-${wheel_lower}"
+    )
+
+    foreach(shortname IN LISTS all_module_shortnames)
+        if(shortname IN_LIST PYSIDE_${wheel_upper}_WHEEL_MODULES)
+            process_pyside_module("${shortname}")
+        endif()
+    endforeach()
+endforeach()
+
+# Report any built modules that are not assigned to any wheel.
+if(QT_GENERATE_SBOM)
+    if(pyside_unsassigned_sbom_modules)
+        list(JOIN pyside_unsassigned_sbom_modules ", " pyside_unsassigned_sbom_modules_string)
+        message(STATUS "PySide6 SBOM: modules that were incorrectly added to an SBOM document "
+            "(absent from all wheel lists): ${pyside_unsassigned_sbom_modules_string}")
+    else()
+        message(STATUS
+            "PySide6 SBOM: all built modules were added to their respective SBOM document.")
+    endif()
+endif()

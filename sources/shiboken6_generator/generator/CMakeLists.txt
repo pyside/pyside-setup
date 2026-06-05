@@ -32,7 +32,11 @@ else()
              ${libclang_lib_dir})
 endif()
 
-add_executable(shiboken6 ${shiboken6_SRC})
+qfp_add_executable(shiboken6
+    RUNTIME_PATH "bin"
+    FUNCTION_ARGS
+        ${shiboken6_SRC}
+)
 add_executable(Shiboken6::shiboken6 ALIAS shiboken6)
 add_dependencies(shiboken6 apiextractor)
 
@@ -71,6 +75,12 @@ if(NOT is_pyside6_superproject_build)
     install(TARGETS shiboken6
             EXPORT "${package_name}WheelTargets"
             DESTINATION "shiboken6_generator")
+    # The SBOM package of shiboken6 only covers the copy installed into bin.
+    qfp_sbom_add_files(shiboken6
+        FILES "$<TARGET_FILE_NAME:shiboken6>"
+        FILE_TYPE "BINARY"
+        INSTALL_PATH "shiboken6_generator"
+    )
 
     install(EXPORT "${package_name}WheelTargets"
             NAMESPACE "Shiboken6::"
@@ -108,6 +118,26 @@ configure_file("${shiboken_version_path}"
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/_git_shiboken_generator_version.py"
         DESTINATION "${PYTHON_SITE_PACKAGES}/${shiboken_generator_package_name}")
 
+# The Python files are licensed differently than the shiboken6 executable.
+qfp_sbom_get_open_source_permissive_library_license(python_files_license_expression)
+qfp_add_custom_sbom(ShibokenGeneratorPythonFiles
+    LICENSE_CONCLUDED_EXPRESSION "${python_files_license_expression}"
+)
+qfp_sbom_get_relative_python_site_packages(relative_python_site_packages)
+qfp_sbom_add_files(ShibokenGeneratorPythonFiles
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/_config.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/__init__.py"
+        "${CMAKE_CURRENT_BINARY_DIR}/_git_shiboken_generator_version.py"
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "${relative_python_site_packages}/${shiboken_generator_package_name}"
+)
+qfp_sbom_add_files(ShibokenGeneratorPythonFiles
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shiboken_tool.py"
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "bin"
+)
+
 include(CMakePackageConfigHelpers)
 
 # Copy macros file to build tree
@@ -135,3 +165,25 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/${package_name}ConfigVersion.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/${package_name}Macros.cmake"
     DESTINATION "${LIB_INSTALL_DIR}/cmake/${package_name}")
+
+qfp_sbom_get_build_system_license(build_system_license_expression)
+qfp_add_custom_sbom(${package_name}PackageConfigFiles
+    LICENSE_CONCLUDED_EXPRESSION "${build_system_license_expression}"
+)
+qfp_sbom_get_export_file_names(export_files ${package_name}Targets)
+qfp_sbom_add_files(${package_name}PackageConfigFiles
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/${package_name}Config.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/${package_name}ConfigVersion.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/${package_name}Macros.cmake"
+        ${export_files}
+    FILE_TYPE "TEXT"
+    INSTALL_PATH "${LIB_INSTALL_DIR}/cmake/${package_name}"
+)
+if(NOT is_pyside6_superproject_build)
+    qfp_sbom_add_files(${package_name}PackageConfigFiles
+        FILES ${export_files}
+        FILE_TYPE "TEXT"
+        INSTALL_PATH "${LIB_INSTALL_DIR}/wheels/cmake/${package_name}"
+    )
+endif()

@@ -4,8 +4,12 @@
 include(CheckIncludeFileCXX)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../shiboken6_generator/cmake")
 
 include(ShibokenHelpers)
+include(ShibokenGeneratorCMakeHelpers)
+include(ShibokenGeneratorSbomHelpers)
+include(ShibokenGeneratorTargetHelpers)
 
 option(DISABLE_DOCSTRINGS "Disable documentation extraction." FALSE)
 

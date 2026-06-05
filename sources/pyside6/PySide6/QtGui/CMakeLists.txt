@@ -366,3 +366,10 @@ create_pyside_module(NAME QtGui
 install(FILES ${PYSIDE_PACKAGE_SOURCE_DIR}/qpytextobject.h
               ${PYSIDE_PACKAGE_SOURCE_DIR}/qtguihelper.h
         DESTINATION include/PySide6/QtGui/)
+qfp_sbom_add_files(QtGui
+    FILES
+        ${PYSIDE_PACKAGE_SOURCE_DIR}/qpytextobject.h
+        ${PYSIDE_PACKAGE_SOURCE_DIR}/qtguihelper.h
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "include/PySide6/QtGui"
+)
