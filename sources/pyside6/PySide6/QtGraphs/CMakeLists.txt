@@ -97,3 +97,8 @@ create_pyside_module(NAME QtGraphs
 
 install(FILES ${PYSIDE_PACKAGE_SOURCE_DIR}/qtgraphs_helper.h
         DESTINATION include/PySide6/QtGraphs)
+qfp_sbom_add_files(QtGraphs
+    FILES ${PYSIDE_PACKAGE_SOURCE_DIR}/qtgraphs_helper.h
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "include/PySide6/QtGraphs"
+)

@@ -117,7 +117,17 @@ if(IOS)
 else()
     set(library_type SHARED)
 endif()
-add_library(libshiboken ${library_type} ${libshiboken_SRC})
+
+qfp_sbom_get_python_runtime_target(python_runtime_sbom_target)
+qfp_add_library(libshiboken
+    FUNCTION_ARGS
+        ${library_type} ${libshiboken_SRC}
+    RUNTIME_PATH bin
+    LIBRARY_PATH "${LIB_INSTALL_DIR}"
+    ARCHIVE_PATH "${LIB_INSTALL_DIR}"
+    SBOM_ARGS
+        SBOM_DEPENDENCIES ${python_runtime_sbom_target}
+)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     # Android requires 16 KB aligned LOAD segments for Play Store submission.
@@ -141,6 +151,7 @@ if (NOT "${NUMPY_INCLUDE_DIR}" STREQUAL "")
     target_include_directories(libshiboken PRIVATE ${NUMPY_INCLUDE_DIR})
     target_compile_definitions(libshiboken PRIVATE -DHAVE_NUMPY
                                            PRIVATE -DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION)
+    qfp_sbom_add_numpy_build_dependency(libshiboken INCLUDE_DIR "${NUMPY_INCLUDE_DIR}")
 else()
     message(STATUS "NUMPY not found")
 endif()
@@ -184,58 +195,67 @@ set_target_properties(libshiboken PROPERTIES ${set_props_args})
 
 qfp_strip_library("libshiboken")
 
-install(FILES
-        autodecref.h
-        basewrapper.h
-        basewrapper_p.h
-        bindingmanager.h
-        gilstate.h
-        helper.h
-        pyobjectholder.h
-        sbkarrayconverter.h
-        sbkarrayspan_p.h
-        sbkbindingutils.h
-        sbkcontainer.h
-        sbkconverter.h
-        sbkcpptonumpy.h
-        sbkdestructorentry.h
-        sbkenum.h
-        sbkenum_p.h
-        sbkerrors.h
-        sbkfeature_base.h
-        sbkmodule.h
-        sbkmodule_p.h
-        sbknumpycheck.h
-        sbknumpyview.h
-        sbkpydictrange.h
-        sbkpysequencerange.h
-        sbkpytuplerange.h
-        sbkpyrangespolicies.h
-        sbkstring.h
-        sbkcppstring.h
-        sbksmartpointer.h
-        sbkstaticstrings.h
-        sbktypefactory.h
-        shiboken.h
-        shibokenmacros.h
-        shibokenclasshelpermacros.h
-        threadstatesaver.h
-        shibokenbuffer.h
-        sbkpep.h
-        sbkpepbuffer.h
-        sbkpython.h
-        sbkwindows.h
-        pep384impl.h
-        pep384impl_p.h
-        pep384ext.h
-        voidptr.h
-        bufferprocs_py37.h
-        "${CMAKE_CURRENT_BINARY_DIR}/sbkversion.h"
+set(libshiboken_HEADERS
+    autodecref.h
+    basewrapper.h
+    basewrapper_p.h
+    bindingmanager.h
+    gilstate.h
+    helper.h
+    pyobjectholder.h
+    sbkarrayconverter.h
+    sbkarrayspan_p.h
+    sbkbindingutils.h
+    sbkcontainer.h
+    sbkconverter.h
+    sbkcpptonumpy.h
+    sbkdestructorentry.h
+    sbkenum.h
+    sbkenum_p.h
+    sbkerrors.h
+    sbkfeature_base.h
+    sbkmodule.h
+    sbkmodule_p.h
+    sbknumpycheck.h
+    sbknumpyview.h
+    sbkpydictrange.h
+    sbkpysequencerange.h
+    sbkpytuplerange.h
+    sbkpyrangespolicies.h
+    sbkstring.h
+    sbkcppstring.h
+    sbksmartpointer.h
+    sbkstaticstrings.h
+    sbktypefactory.h
+    shiboken.h
+    shibokenmacros.h
+    shibokenclasshelpermacros.h
+    threadstatesaver.h
+    shibokenbuffer.h
+    sbkpep.h
+    sbkpepbuffer.h
+    sbkpython.h
+    sbkwindows.h
+    pep384impl.h
+    pep384impl_p.h
+    pep384ext.h
+    voidptr.h
+    bufferprocs_py37.h
+    "${CMAKE_CURRENT_BINARY_DIR}/sbkversion.h"
 
-        signature.h
-        signature_p.h
+    signature.h
+    signature_p.h
+)
 
-        DESTINATION include/shiboken6${shiboken6_SUFFIX})
+set(libshiboken_headers_install_path "include/shiboken6${shiboken6_SUFFIX}")
+install(FILES ${libshiboken_HEADERS}
+        DESTINATION "${libshiboken_headers_install_path}")
+qfp_sbom_add_files(libshiboken
+    FILES ${libshiboken_HEADERS}
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "${libshiboken_headers_install_path}"
+)
+
 install(TARGETS libshiboken EXPORT Shiboken6Targets
                             LIBRARY DESTINATION "${LIB_INSTALL_DIR}"
                             ARCHIVE DESTINATION "${LIB_INSTALL_DIR}"
@@ -255,6 +275,16 @@ if(NOT is_pyside6_superproject_build)
             ARCHIVE DESTINATION "shiboken6"
             RUNTIME DESTINATION "shiboken6"
             INCLUDES DESTINATION "shiboken6/include/shiboken6")
+    # The SBOM package of libshiboken only covers the copy installed into LIB_INSTALL_DIR.
+    set(libshiboken_wheel_files "$<TARGET_FILE_NAME:libshiboken>")
+    if(WIN32)
+        list(APPEND libshiboken_wheel_files "$<TARGET_LINKER_FILE_NAME:libshiboken>")
+    endif()
+    qfp_sbom_add_files(libshiboken
+        FILES ${libshiboken_wheel_files}
+        FILE_TYPE "BINARY"
+        INSTALL_PATH "shiboken6"
+    )
 
     install(EXPORT Shiboken6WheelTargets
             NAMESPACE Shiboken6::

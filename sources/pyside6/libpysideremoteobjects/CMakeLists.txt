@@ -27,7 +27,17 @@ list(GET Qt6RepParser_INCLUDE_DIRS 0 REPPARSER_DIR)
 include(QtTargetHelpers)
 include(QtTestHelpers)
 include(QtLalrHelpers)
-add_library(pyside6remoteobjects STATIC ${libpysideremoteobjects_SRC})
+
+qfp_sbom_get_python_runtime_target(python_runtime_sbom_target)
+qfp_add_library(pyside6remoteobjects
+    FUNCTION_ARGS
+        STATIC ${libpysideremoteobjects_SRC}
+    RUNTIME_PATH bin
+    LIBRARY_PATH "${LIB_INSTALL_DIR}"
+    ARCHIVE_PATH "${LIB_INSTALL_DIR}"
+    SBOM_ARGS
+        SBOM_DEPENDENCIES ${python_runtime_sbom_target}
+)
 
 target_include_directories(pyside6remoteobjects PRIVATE
     ${REPPARSER_DIR}
@@ -72,6 +82,11 @@ add_custom_target(libpysideremoteobjects_qdoc
 
 install(FILES ${libpysideremoteobjects_HEADERS}
         DESTINATION include/${BINDING_NAME}${pyside6remoteobjects_SUFFIX})
+qfp_sbom_add_files(pyside6remoteobjects
+    FILES ${libpysideremoteobjects_HEADERS}
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "include/${BINDING_NAME}${pyside6remoteobjects_SUFFIX}"
+)
 
 install(TARGETS pyside6remoteobjects EXPORT PySide6RemoteObjectsTargets
                            LIBRARY DESTINATION "${LIB_INSTALL_DIR}"

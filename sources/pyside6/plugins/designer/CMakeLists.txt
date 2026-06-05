@@ -10,7 +10,13 @@ set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 COMPONENTS Core Gui Widgets UiPlugin)
 
-qt_add_plugin(PySidePlugin)
+set(install_path "${QT6_INSTALL_PLUGINS}/designer")
+qfp_add_library(PySidePlugin
+    CREATE_QT_PLUGIN
+    LIBRARY_PATH "${install_path}"
+    SBOM_ARGS
+        SBOM_ENTITY_TYPE LIBRARY
+)
 
 target_sources(PySidePlugin PRIVATE
     designercustomwidgets.cpp designercustomwidgets.h

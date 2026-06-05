@@ -13,6 +13,20 @@ set(QT_NO_PRIVATE_MODULE_WARNING ON)
 
 include(cmake/PySideSetup.cmake)
 
+qfp_setup_sbom()
+
+get_filename_component(qfp_license_dir_path "${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSES" REALPATH)
+
+# The PySide6 build creates one SBOM document per wheel: an essentials document (opened here,
+# covering libpyside and the essential modules), and addons, webengine and pdf documents
+# (opened mid-way through the module loop in PySide6/CMakeLists.txt).
+qfp_sbom_begin_project(
+    SBOM_PROJECT_NAME "PySide6-Essentials"
+    LICENSE_DIR_PATHS "${qfp_license_dir_path}"
+    INSTALL_SBOM_DIR "share/sbom/PySide6-Essentials"
+    PYPI_PURL_NAME "pyside6-essentials"
+)
+
 get_rpath_base_token(base)
 
 if (${STANDALONE})
@@ -54,6 +68,9 @@ if(Qt${QT_MAJOR_VERSION}UiTools_FOUND)
 endif()
 
 add_subdirectory(PySide6)
+
+qfp_sbom_end_project()
+
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)

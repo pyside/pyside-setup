@@ -101,7 +101,18 @@ if(IOS)
 else()
     set(library_type SHARED)
 endif()
-add_library(pyside6 ${library_type} ${libpyside_SRC} ${other_files})
+
+qfp_sbom_get_python_runtime_target(python_runtime_sbom_target)
+qfp_add_library(pyside6
+    FUNCTION_ARGS
+        ${library_type} ${libpyside_SRC} ${other_files}
+    RUNTIME_PATH bin
+    LIBRARY_PATH "${LIB_INSTALL_DIR}"
+    ARCHIVE_PATH "${LIB_INSTALL_DIR}"
+    SBOM_ARGS
+        SBOM_DEPENDENCIES ${python_runtime_sbom_target}
+)
+
 add_library(PySide6::pyside6 ALIAS pyside6)
 
 #does nothing if QFP_NO_OVERRIDE_OPTIMIZATION_FLAGS (no-size-optimization) flag is not set
@@ -214,6 +225,11 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/PySide6ConfigVersion.cmake.in"
 
 install(FILES ${libpyside_HEADERS}
         DESTINATION include/${BINDING_NAME}${pyside6_SUFFIX})
+qfp_sbom_add_files(pyside6
+    FILES ${libpyside_HEADERS}
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "include/${BINDING_NAME}${pyside6_SUFFIX}"
+)
 
 # build-time installation
 install(TARGETS pyside6 EXPORT PySide6Targets
@@ -232,6 +248,16 @@ if(NOT is_pyside6_superproject_build)
                             ARCHIVE DESTINATION "PySide6"
                             RUNTIME DESTINATION "PySide6"
                             INCLUDES DESTINATION "PySide6/include/PySide6")
+    # The SBOM package of pyside6 only covers the copy installed into LIB_INSTALL_DIR.
+    set(pyside6_wheel_files "$<TARGET_FILE_NAME:pyside6>")
+    if(WIN32)
+        list(APPEND pyside6_wheel_files "$<TARGET_LINKER_FILE_NAME:pyside6>")
+    endif()
+    qfp_sbom_add_files(pyside6
+        FILES ${pyside6_wheel_files}
+        FILE_TYPE "BINARY"
+        INSTALL_PATH "PySide6"
+    )
 
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/wheel/PySide6Config${SHIBOKEN_PYTHON_CONFIG_SUFFIX}.cmake"
             DESTINATION "${LIB_INSTALL_DIR}/wheels/cmake/PySide6")
@@ -248,3 +274,38 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/install/PySide6Config${SHIBOKEN_PYTHO
 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/PySide6ConfigVersion.cmake"
         DESTINATION "${LIB_INSTALL_DIR}/cmake/PySide6")
+
+qfp_sbom_get_build_system_license(build_system_license_expression)
+qfp_add_custom_sbom(PySide6PackageConfigFiles
+    LICENSE_CONCLUDED_EXPRESSION "${build_system_license_expression}"
+)
+qfp_sbom_add_files(PySide6PackageConfigFiles
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/PySide6Config.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/install/PySide6Config${SHIBOKEN_PYTHON_CONFIG_SUFFIX}.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/PySide6ConfigVersion.cmake"
+    FILE_TYPE "TEXT"
+    INSTALL_PATH "${LIB_INSTALL_DIR}/cmake/PySide6"
+)
+qfp_sbom_add_files(PySide6PackageConfigFiles
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/pyside6${pyside6_SUFFIX}.pc"
+    FILE_TYPE "TEXT"
+    INSTALL_PATH "${LIB_INSTALL_DIR}/pkgconfig"
+)
+
+# The export files are installed by ../CMakeLists.txt.
+qfp_sbom_get_export_file_names(pyside6_export_files PySide6Targets)
+qfp_sbom_add_files(PySide6PackageConfigFiles
+    FILES ${pyside6_export_files}
+    FILE_TYPE "TEXT"
+    INSTALL_PATH "${LIB_INSTALL_DIR}/cmake/PySide6"
+)
+if(NOT is_pyside6_superproject_build)
+    qfp_sbom_add_files(PySide6PackageConfigFiles
+        FILES
+            "${CMAKE_CURRENT_BINARY_DIR}/wheel/PySide6Config${SHIBOKEN_PYTHON_CONFIG_SUFFIX}.cmake"
+            ${pyside6_export_files}
+        FILE_TYPE "TEXT"
+        INSTALL_PATH "${LIB_INSTALL_DIR}/wheels/cmake/PySide6"
+    )
+endif()

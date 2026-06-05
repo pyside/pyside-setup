@@ -88,12 +88,23 @@ parser/enumvalue.cpp parser/enumvalue.h
 parser/typeinfo.cpp parser/typeinfo.h
 )
 
-find_package(WrapLibXml2 2.15.2)
-find_package(WrapLibXslt 1.1.19)
+qfp_find_package(WrapLibXml2 2.15.2 PROVIDED_TARGETS WrapLibXml2::WrapLibXml2)
+qfp_find_package(WrapLibXslt 1.1.19 PROVIDED_TARGETS WrapLibXslt::WrapLibXslt)
 
 set(HAS_LIBXSLT 0)
 if(WrapLibXslt_FOUND AND WrapLibXml2_FOUND)
     set(HAS_LIBXSLT 1)
+
+    qfp_sbom_compute_cpe(libxml2_cpe
+        VENDOR "xmlsoft" PRODUCT "libxml2" VERSION "${WrapLibXml2_VERSION}")
+    qfp_find_package_extend_sbom(TARGETS WrapLibXml2::WrapLibXml2
+        CPE "${libxml2_cpe}"
+    )
+    qfp_sbom_compute_cpe(libxslt_cpe
+        VENDOR "xmlsoft" PRODUCT "libxslt" VERSION "${WrapLibXslt_VERSION}")
+    qfp_find_package_extend_sbom(TARGETS WrapLibXslt::WrapLibXslt
+        CPE "${libxslt_cpe}"
+    )
 endif()
 
 if(NOT HAS_LIBXSLT)
@@ -104,7 +115,15 @@ endif()
 # Export to parent scope so that generator/CMakeLists.txt gets it
 set(DISABLE_DOCSTRINGS ${DISABLE_DOCSTRINGS} PARENT_SCOPE)
 
-add_library(apiextractor STATIC ${apiextractor_SRC})
+qfp_sbom_get_open_source_tool_license(apiextractor_license_expression)
+qfp_add_library(apiextractor
+    NO_INSTALL
+    SBOM_ARGS
+        LICENSE_CONCLUDED_EXPRESSION "${apiextractor_license_expression}"
+    FUNCTION_ARGS
+        STATIC ${apiextractor_SRC}
+)
+
 target_include_directories(apiextractor PRIVATE ${CLANG_INCLUDE_DIRS}
                                                 ${CMAKE_CURRENT_SOURCE_DIR}
                                                 ${CMAKE_CURRENT_BINARY_DIR}
@@ -113,6 +132,21 @@ target_include_directories(apiextractor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(apiextractor PUBLIC Qt::Core)
 target_link_libraries(apiextractor PRIVATE libclang)
+
+# The Clang package doesn't set Clang_VERSION.
+set(libclang_sbom_args "")
+if(LLVM_PACKAGE_VERSION)
+    qfp_sbom_compute_cpe(libclang_cpe
+        VENDOR "llvm" PRODUCT "clang" VERSION "${LLVM_PACKAGE_VERSION}")
+    list(APPEND libclang_sbom_args
+        PACKAGE_VERSION "${LLVM_PACKAGE_VERSION}"
+        CPE "${libclang_cpe}"
+    )
+endif()
+qfp_find_package_extend_sbom(TARGETS libclang
+    LICENSE_DECLARED_EXPRESSION "Apache-2.0 WITH LLVM-exception"
+    ${libclang_sbom_args}
+)
 
 if (HAS_LIBXSLT)
     target_compile_definitions(apiextractor PUBLIC HAVE_LIBXSLT)

@@ -51,3 +51,8 @@ create_pyside_module(NAME QtDBus
                      SOURCES QtDBus_SRC)
 
 install(FILES ${PYSIDE_PACKAGE_SOURCE_DIR}/qtdbushelper.h DESTINATION include/PySide6/QtDBus)
+qfp_sbom_add_files(QtDBus
+    FILES ${PYSIDE_PACKAGE_SOURCE_DIR}/qtdbushelper.h
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "include/PySide6/QtDBus"
+)

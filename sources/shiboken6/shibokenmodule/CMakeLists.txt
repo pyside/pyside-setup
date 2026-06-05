@@ -28,7 +28,21 @@ if(IOS)
 else()
     set(library_type MODULE)
 endif()
-add_library(shibokenmodule ${library_type} ${sample_SRC})
+
+file(RELATIVE_PATH relative_python_site_packages
+    "${CMAKE_INSTALL_PREFIX}" "${PYTHON_SITE_PACKAGES}")
+set(install_path "${relative_python_site_packages}/shiboken6")
+qfp_sbom_get_python_runtime_target(python_runtime_sbom_target)
+qfp_add_library(shibokenmodule
+    FUNCTION_ARGS
+        ${library_type} ${sample_SRC}
+    ARCHIVE_PATH "${install_path}"
+    LIBRARY_PATH "${install_path}"
+    SBOM_ARGS
+        SBOM_ENTITY_TYPE LIBRARY
+        SBOM_DEPENDENCIES ${python_runtime_sbom_target}
+)
+
 target_include_directories(shibokenmodule PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
                                                   ${CMAKE_SOURCE_DIR})
 
@@ -60,6 +74,11 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/_config.py.in"
                "${CMAKE_CURRENT_BINARY_DIR}/_config.py" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/_config.py"
         DESTINATION "${PYTHON_SITE_PACKAGES}/shiboken6")
+qfp_sbom_add_files(shibokenmodule
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/_config.py"
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "${install_path}"
+)
 
 if ("${MINIMUM_PYTHON_VERSION}" STREQUAL "")
     set(MINIMUM_PYTHON_VERSION None)
@@ -78,10 +97,25 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/py.typed.in"
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/../Shiboken.pyi"
               "${CMAKE_CURRENT_BINARY_DIR}/../py.typed"
         DESTINATION "${PYTHON_SITE_PACKAGES}/shiboken6")
+qfp_sbom_add_files(shibokenmodule
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/../Shiboken.pyi"
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "${install_path}"
+)
+qfp_sbom_add_files(shibokenmodule
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/../py.typed"
+    FILE_TYPE "TEXT"
+    INSTALL_PATH "${install_path}"
+)
 
 # PYSIDE-1497: This `..` is the crucial trick to unify the path location of `Shiboken`.
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/../__init__.py"
        DESTINATION "${PYTHON_SITE_PACKAGES}/shiboken6")
+qfp_sbom_add_files(shibokenmodule
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/../__init__.py"
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "${install_path}"
+)
 
 # Use absolute path instead of relative path, to avoid ninja build errors due to
 # duplicate file dependency inconsistency.
@@ -92,3 +126,8 @@ configure_file("${shiboken_version_path}"
 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/_git_shiboken_module_version.py"
         DESTINATION "${PYTHON_SITE_PACKAGES}/shiboken6")
+qfp_sbom_add_files(shibokenmodule
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/_git_shiboken_module_version.py"
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "${install_path}"
+)

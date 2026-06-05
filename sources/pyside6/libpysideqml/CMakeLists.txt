@@ -59,7 +59,18 @@ if(IOS)
 else()
     set(library_type SHARED)
 endif()
-add_library(pyside6qml ${library_type} ${libpysideqml_SRC} ${other_files})
+
+qfp_sbom_get_python_runtime_target(python_runtime_sbom_target)
+qfp_add_library(pyside6qml
+    FUNCTION_ARGS
+        ${library_type} ${libpysideqml_SRC} ${other_files}
+    RUNTIME_PATH bin
+    LIBRARY_PATH "${LIB_INSTALL_DIR}"
+    ARCHIVE_PATH "${LIB_INSTALL_DIR}"
+    SBOM_ARGS
+        SBOM_DEPENDENCIES ${python_runtime_sbom_target}
+)
+
 add_library(PySide6::pyside6qml ALIAS pyside6qml)
 
 target_include_directories(pyside6qml PUBLIC
@@ -111,6 +122,11 @@ qfp_strip_library("pyside6qml")
 
 install(FILES ${libpysideqml_HEADERS}
         DESTINATION include/${BINDING_NAME}${pyside6qml_SUFFIX})
+qfp_sbom_add_files(pyside6qml
+    FILES ${libpysideqml_HEADERS}
+    FILE_TYPE "SOURCE"
+    INSTALL_PATH "include/${BINDING_NAME}${pyside6qml_SUFFIX}"
+)
 
 #built-time installation
 install(TARGETS pyside6qml EXPORT PySide6Targets
@@ -126,6 +142,16 @@ if(NOT is_pyside6_superproject_build)
                             LIBRARY DESTINATION "PySide6"
                             ARCHIVE DESTINATION "PySide6"
                             RUNTIME DESTINATION "PySide6")
+    # The SBOM package of pyside6qml only covers the copy installed into LIB_INSTALL_DIR.
+    set(pyside6qml_wheel_files "$<TARGET_FILE_NAME:pyside6qml>")
+    if(WIN32)
+        list(APPEND pyside6qml_wheel_files "$<TARGET_LINKER_FILE_NAME:pyside6qml>")
+    endif()
+    qfp_sbom_add_files(pyside6qml
+        FILES ${pyside6qml_wheel_files}
+        FILE_TYPE "BINARY"
+        INSTALL_PATH "PySide6"
+    )
 endif()
 
 # documentation
