@@ -401,7 +401,20 @@ def get_packages(package_path: Path, manifest_content: str) -> list[str]:
     return sorted(packages)
 
 
-def generate_setup_py(artifacts: Path, setup: SetupData,
+# Maps a wheel name to the list of SBOM directory names to be included for that
+# wheel. The 'PySide6' meta and examples wheels currently do not bundle an
+# SBOM.
+WHEEL_SBOM_DIRS = {
+    "PySide6_Essentials": ["PySide6-Essentials", "PySide6-Tools-Essentials"],
+    "PySide6_Addons": ["PySide6-Addons", "PySide6-Tools-Addons"],
+    "PySide6_WebEngine": ["PySide6-WebEngine"],
+    "PySide6_Pdf": ["PySide6-Pdf"],
+    "shiboken6": ["shiboken6"],
+    "shiboken6_generator": ["shiboken6_generator"],
+}
+
+
+def generate_setup_py(artifacts: Path, setup: SetupData, sbom_root: Path | None,
                       exclude_package_data: dict[str, list[str]] | None = None):
     _name = setup.name
 
@@ -420,6 +433,18 @@ def generate_setup_py(artifacts: Path, setup: SetupData,
     else:
         fext = "Shiboken"
 
+    # Compute the SBOM dir names this wheel will include from the CMake install
+    # prefix. Empty when the wheel includes no SBOM.
+    sbom_dirs = WHEEL_SBOM_DIRS.get(setup.name, []) if sbom_root else []
+
+    # Skip SBOM info for Addon Qt tools when --no-qt-tools is passed, aka the directory
+    # does not exist.
+    tools_addons_dir = "PySide6-Tools-Addons"
+    if tools_addons_dir in sbom_dirs and not (sbom_root / tools_addons_dir).is_dir():
+        sbom_dirs = [d for d in sbom_dirs if d != tools_addons_dir]
+
+    sbom_dirs = [(sbom_root / sbom_dir).resolve().as_posix() for sbom_dir in sbom_dirs]
+
     # For special wheels based on 'PySide6'
     # we force the name to be PySide6 for the package_name,
     # so we can take the files from that packaged-directory
@@ -427,10 +452,15 @@ def generate_setup_py(artifacts: Path, setup: SetupData,
                       "PySide6_Examples", "PySide6_WebEngine", "PySide6_Pdf"):
         _name = "PySide6"
 
+    # Pass the repo root so the generated setup.py can import build_scripts.
+    repo_root = Path(__file__).resolve().parent
+
     with open(artifacts / "setup.py.base", encoding="utf-8") as f:
         content = f.read().format(
             name=_name,
             fake_ext=fext,
+            repo_root=repo_root.as_posix(),
+            sbom_dirs=repr(sbom_dirs),
             exclude_package_data=exclude_package_data or {},
         )
 
@@ -799,6 +829,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--no-examples", "-e", action="store_true",
                         help="Do not build examples wheel")
+    parser.add_argument("--sbom", action="store_true",
+                        help="Include SBOM documents in the wheels")
     parser.add_argument("--sbom-mapping-warn-only", action="store_true",
                         help="Report mismatches between PySideSbomWheelMapping.cmake and "
                              "build_scripts/wheel_files.py as warnings instead of failing")
@@ -850,6 +882,13 @@ if __name__ == "__main__":
     if not options.no_examples:
         wheels["PySide6_Examples"] = wheel_pyside6_examples
 
+    # SBOM documents are installed into the CMake install prefix at
+    # '<build_dir>/install/share/sbom/<wheel_name>'. The generated setup.py
+    # needs this location to include the correct SBOM files in the wheel.
+    sbom_install_root = build_directory / "install" / "share" / "sbom"
+    if not options.sbom:
+        sbom_install_root = None
+
     check_sbom_wheel_mapping(package_path, options.sbom_mapping_warn_only)
 
     for name, wheel_info in wheels.items():
@@ -864,7 +903,8 @@ if __name__ == "__main__":
             unwanted_pyi = get_unwanted_pyi_files(data, package_path)
             if unwanted_pyi:
                 exclude_package_data = {"PySide6": unwanted_pyi}
-        setup_py_content = generate_setup_py(artifacts_path, setup, exclude_package_data)
+        setup_py_content = generate_setup_py(artifacts_path, setup, sbom_install_root,
+                                             exclude_package_data)
         with open(setup_py_path, "w", encoding="utf-8") as f:
             f.write(setup_py_content)
 
