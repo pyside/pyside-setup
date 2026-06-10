@@ -9,8 +9,9 @@ from pathlib import Path
 from email.generator import Generator
 
 from .log import log
+from .config import config
 from .options import OPTION, CommandMixin
-from .utils import is_64bit
+from .utils import is_64bit, copydir
 from .wheel_utils import get_package_version, get_qt_version, macos_plat_name
 
 wheel_module_exists = False
@@ -37,7 +38,57 @@ def get_bdist_wheel_override():
     return PysideBuildWheel if wheel_module_exists else None
 
 
-class PysideBuildWheel(_bdist_wheel, CommandMixin):
+class WheelSbomDistInfoMixin:
+    """Inject a project's SBOM files into the wheel's '.dist-info/sboms' dir.
+
+    Child classes need to implement ``sbom_source_dirs`` to point at the
+    list of directory paths that contain SBOM files. A wheel may bundle more
+    than one document (e.g. the split PySide6 essentials + addons documents).
+    """
+
+    def sbom_source_dirs(self) -> list[Path]:
+        raise NotImplementedError
+
+    def egg2dist(self, egg_info_path, dist_info_path):
+        """
+        Overrides the egg2dist method to copy SBOM files into the wheel
+        '.dist-info/sboms' directory.
+
+        This is the only point in time we can inject contents into the
+        '.dist-info' directory, because before that, the parent egg2dist
+        implementation removes any existing '.dist-info' directory.
+
+        """
+        # Call the original method, which creates the dist-info directory.
+        super().egg2dist(egg_info_path, dist_info_path)
+
+        # Copy the SBOM files, if this wheel bundles any SBOM documents at all.
+        sbom_source_dirs = [Path(d) for d in self.sbom_source_dirs()]
+        existing_sbom_source_dirs = [d for d in sbom_source_dirs if d.is_dir()]
+
+        missing_dirs = [d for d in sbom_source_dirs if d not in existing_sbom_source_dirs]
+        for missing_dir in missing_dirs:
+            log.warning(f"SBOM source dir '{missing_dir}' not found; "
+                        "skipping its inclusion into the wheel.")
+
+        if not existing_sbom_source_dirs:
+            log.info("No SBOM documents to bundle for this wheel; skipping.")
+            return
+
+        dist_info_sbom_dir = Path(dist_info_path) / "sboms"
+
+        # The documents are expected to have distinct file names, so their
+        # contents can be merged into the single '.dist-info/sboms' directory.
+        for sbom_source_dir in existing_sbom_source_dirs:
+            _vars = {
+                "sbom_source_dir": sbom_source_dir,
+                "dist_info_sbom_dir": dist_info_sbom_dir,
+            }
+            log.info(f"Copying SBOM files from '{sbom_source_dir}'.")
+            copydir("{sbom_source_dir}", "{dist_info_sbom_dir}", _vars=_vars)
+
+
+class PysideBuildWheel(WheelSbomDistInfoMixin, _bdist_wheel, CommandMixin):
 
     user_options = (  # type: ignore[assignment]
         _bdist_wheel.user_options + CommandMixin.mixin_user_options
@@ -83,6 +134,23 @@ class PysideBuildWheel(_bdist_wheel, CommandMixin):
         if self.build_number:
             components += (self.build_number,)  # type: ignore[assignment]
         return '-'.join(components)
+
+    def sbom_source_dirs(self) -> list[Path]:
+        # Read this project's SBOM documents from the CMake install prefix.
+        build_command = self.get_finalized_command('build')
+        sbom_root = Path(build_command.install_dir) / "share" / "sbom"
+
+        # The PySide6 build has multiple sbom source dirs.
+        if config.is_internal_pyside_build():
+            sbom_dirs = [sbom_root / d for d in ("PySide6-Essentials", "PySide6-Addons",
+                                                 "PySide6-WebEngine", "PySide6-Pdf",
+                                                 "PySide6-Tools-Essentials",
+                                                 "PySide6-Tools-Addons")]
+            return [d for d in sbom_dirs if d.is_dir()]
+
+        # shiboken6 / shiboken6_generator: a single document named after the
+        # package.
+        return [sbom_root / config.package_name()]
 
     # Modify the returned wheel tag tuple to use correct python version
     # info when cross-compiling. We use the python info extracted from
@@ -267,5 +335,19 @@ class PysideBuildWheel(_bdist_wheel, CommandMixin):
             Generator(f, maxheaderlen=0).flatten(msg)
 
 
+class CreateWheelsBuildWheel(WheelSbomDistInfoMixin, _bdist_wheel):
+    """Minimal bdist_wheel override used by create_wheels.py.
+
+    The SBOM directories are provided via the ``sbom_dirs`` class attribute
+    (a list of directory paths), injected into the setup.py.base template.
+    """
+
+    sbom_dirs: list[Path | str] = []
+
+    def sbom_source_dirs(self) -> list[Path]:
+        return [Path(d) for d in self.sbom_dirs]
+
+
 if not wheel_module_exists:
     del PysideBuildWheel
+    del CreateWheelsBuildWheel

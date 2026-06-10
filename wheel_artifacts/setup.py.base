@@ -1,5 +1,16 @@
+import sys
+from pathlib import Path
+
 import setuptools
 from setuptools import setup, Extension, Command
+
+# Make the wheel_override module importable in this generated setup.py.
+sys.path.insert(0, r"{repo_root}")
+from build_scripts.wheel_override import CreateWheelsBuildWheel
+
+# Absolute paths to this wheel's SBOM directories in the CMake install
+# prefix (<build_dir>/install/share/sbom/<wheel_name>).
+CreateWheelsBuildWheel.sbom_dirs = [Path(p) for p in {sbom_dirs}]
 
 # This class and Extension file is intended only to force setuptools
 # to understand we are using extension modules, but because we don't
@@ -21,7 +32,8 @@ setup_args = dict(
     include_package_data=True,
     packages = ["{name}"],
     ext_modules = [Extension("{fake_ext}", [], py_limited_api=True)],
-    cmdclass=dict([("build_ext", build_ext)]),
+    cmdclass=dict([("build_ext", build_ext),
+                   ("bdist_wheel", CreateWheelsBuildWheel)]),
     # setuptools implicitly globs and bundles every '*.pyi' file found in a
     # package directory (see setuptools.command.build_py._IMPLICIT_DATA_FILES),
     # regardless of what MANIFEST.in/package_data declare. Since the wheels
