@@ -713,6 +713,13 @@ class PysideBuild(_build, CommandMixin, BuildInfoCollectorMixin):
             cmake_cmd.append(f"-DCMAKE_C_COMPILER_LAUNCHER={compiler_launcher}")
             cmake_cmd.append(f"-DCMAKE_CXX_COMPILER_LAUNCHER={compiler_launcher}")
 
+        if OPTION["SBOM"]:
+            cmake_cmd.append("-DQT_GENERATE_SBOM=ON")
+            cmake_cmd.append("-DQT_SBOM_GENERATE_SPDX_V2_JSON=ON")
+            cmake_cmd.append("-DQT_SBOM_REQUIRE_GENERATE_SPDX_V2_JSON=ON")
+            cmake_cmd.append("-DQT_SBOM_GENERATE_CYDX_V1_6=ON")
+            cmake_cmd.append("-DQT_SBOM_REQUIRE_GENERATE_CYDX_V1_6=ON")
+
         if OPTION["SANITIZE_ADDRESS"]:
             cmake_cmd.append("-DSANITIZE_ADDRESS=ON")
         if OPTION["SANITIZE_THREAD"]:

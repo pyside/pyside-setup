@@ -130,6 +130,9 @@ if __name__ == "__main__":
                         help="Reuse the existing build directories and only rebuild "
                              "changed sources")
 
+    parser.add_argument("--sbom", action="store_true",
+                        help="Generate SBOM files")
+
     args = parser.parse_args()
 
     logging.basicConfig(level=args.loglevel)
@@ -153,6 +156,7 @@ if __name__ == "__main__":
     coin = args.coin
     download_only = args.download_only
     reuse_build = args.reuse_build
+    sbom = args.sbom
 
     # auto download Android NDK and SDK
     pyside6_deploy_cache = Path.home() / ".pyside6_android_deploy"
@@ -298,6 +302,9 @@ if __name__ == "__main__":
 
         if reuse_build:
             qfp_ccompile_cmd.append("--reuse-build")
+
+        if sbom:
+            qfp_ccompile_cmd.append("--sbom")
 
         run_command(qfp_ccompile_cmd, cwd=pyside_setup_dir, dry_run=dry_run, show_stdout=True)
 
