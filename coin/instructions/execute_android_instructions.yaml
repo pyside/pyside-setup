@@ -47,7 +47,8 @@ instructions:
     userMessageOnFailure: >
          Failed to install deps
   - type: ExecuteCommand
-    command: "{{.Env.interpreter}} tools/cross_compile_android/main.py --qt-install-path /Users/qt/work/install --auto-accept-license --skip-update --verbose --ndk-path {{.Env.ANDROID_NDK_ROOT}} --sdk-path {{.Env.ANDROID_SDK_ROOT}} --plat-name aarch64 --coin"
+    command: "{{.Env.interpreter}} tools/cross_compile_android/main.py --qt-install-path /Users/qt/work/install --auto-accept-license --skip-update --verbose --ndk-path {{.Env.ANDROID_NDK_ROOT}} --sdk-path {{.Env.ANDROID_SDK_ROOT}} --plat-name aarch64 --coin{{.Env.CI_COMMON_SBOM_ARGS}}"
+    executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
     maxTimeInSeconds: 14400
     maxTimeBetweenOutput: 1200
     enable_if:
@@ -57,7 +58,8 @@ instructions:
     userMessageOnFailure: >
          Failed to execute build instructions on macOS
   - type: ExecuteCommand
-    command: "{{.Env.interpreter}} tools/cross_compile_android/main.py --qt-install-path /home/qt/work/install --auto-accept-license --skip-update --verbose --ndk-path {{.Env.ANDROID_NDK_ROOT}} --sdk-path {{.Env.ANDROID_SDK_ROOT}} --plat-name x86_64 --coin"
+    command: "{{.Env.interpreter}} tools/cross_compile_android/main.py --qt-install-path /home/qt/work/install --auto-accept-license --skip-update --verbose --ndk-path {{.Env.ANDROID_NDK_ROOT}} --sdk-path {{.Env.ANDROID_SDK_ROOT}} --plat-name x86_64 --coin{{.Env.CI_COMMON_SBOM_ARGS}}"
+    executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
     maxTimeInSeconds: 14400
     maxTimeBetweenOutput: 1200
     enable_if:

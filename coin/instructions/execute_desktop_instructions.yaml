@@ -11,7 +11,8 @@ instructions:
     userMessageOnFailure: >
          Failed to install requirements-coin.txt dependencies on macOS
   - type: ExecuteCommand
-    command: "python3 -u coin_build_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} {{.Env.CI_USE_SCCACHE}} --instdir=/Users/qt/work/install  --targetOs={{.Env.CI_OS}} --hostArch=X86_64 --targetArch={{.Env.CI_TARGET_ARCHITECTURE}} --phase=ALL"
+    command: "python3 -u coin_build_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} {{.Env.CI_USE_SCCACHE}}{{.Env.CI_COMMON_SBOM_ARGS}} --instdir=/Users/qt/work/install  --targetOs={{.Env.CI_OS}} --hostArch=X86_64 --targetArch={{.Env.CI_TARGET_ARCHITECTURE}} --phase=ALL"
+    executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
     maxTimeInSeconds: 14400
     maxTimeBetweenOutput: 1200
     enable_if:
@@ -26,7 +27,8 @@ instructions:
     userMessageOnFailure: >
          Failed to execute build instructions on macOS
   - type: ExecuteCommand
-    command: "python3 -u coin_build_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} {{.Env.CI_USE_SCCACHE}} --instdir=/Users/qt/work/install  --targetOs={{.Env.CI_OS}} --hostArch=X86_64 --targetArch=X86_64-ARM64 --phase=ALL"
+    command: "python3 -u coin_build_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} {{.Env.CI_USE_SCCACHE}}{{.Env.CI_COMMON_SBOM_ARGS}} --instdir=/Users/qt/work/install  --targetOs={{.Env.CI_OS}} --hostArch=X86_64 --targetArch=X86_64-ARM64 --phase=ALL"
+    executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
     maxTimeInSeconds: 14400
     maxTimeBetweenOutput: 1200
     enable_if:
@@ -70,7 +72,8 @@ instructions:
     userMessageOnFailure: >
          Failed to install requirements-coin.txt dependencies on Linux
   - type: ExecuteCommand
-    command: "{{.Env.interpreter}} -u coin_build_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} {{.Env.CI_USE_SCCACHE}} --instdir=/home/qt/work/install --targetOs={{.Env.CI_OS}} --hostArch={{.Env.HOST_ARCH_COIN}} --targetArch={{.Env.TARGET_ARCH_COIN}}--phase=ALL"
+    command: "{{.Env.interpreter}} -u coin_build_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} {{.Env.CI_USE_SCCACHE}}{{.Env.CI_COMMON_SBOM_ARGS}} --instdir=/home/qt/work/install --targetOs={{.Env.CI_OS}} --hostArch={{.Env.HOST_ARCH_COIN}} --targetArch={{.Env.TARGET_ARCH_COIN}}--phase=ALL"
+    executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
     maxTimeInSeconds: 14400
     maxTimeBetweenOutput: 600
     enable_if:
@@ -90,7 +93,8 @@ instructions:
     userMessageOnFailure: >
          Failed to install requirements-coin.txt dependencies on Windows
   - type: ExecuteCommand
-    command: "c:\\users\\qt\\MSVC.bat {{.Env.PYTHON3_PATH}}\\python.exe -u coin_build_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} {{.Env.CI_USE_SCCACHE}} --instdir=\\Users\\qt\\work\\install --targetOs={{.Env.CI_OS}} --hostArch={{.Env.HOST_ARCH_COIN}}  --targetArch={{.Env.TARGET_ARCH_COIN}} --phase=BUILD"
+    command: "c:\\users\\qt\\MSVC.bat {{.Env.PYTHON3_PATH}}\\python.exe -u coin_build_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} {{.Env.CI_USE_SCCACHE}}{{.Env.CI_COMMON_SBOM_ARGS}} --instdir=\\Users\\qt\\work\\install --targetOs={{.Env.CI_OS}} --hostArch={{.Env.HOST_ARCH_COIN}}  --targetArch={{.Env.TARGET_ARCH_COIN}} --phase=BUILD"
+    executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
     maxTimeInSeconds: 14400
     maxTimeBetweenOutput: 600
     enable_if:
@@ -114,7 +118,8 @@ instructions:
         property: host.os
         equals_value: Windows
   - type: ExecuteCommand
-    command: "c:\\users\\qt\\MSVC.bat {{.Env.PYSIDE_VIRTUALENV}}\\Scripts\\python.exe create_wheels.py --verbose 3"
+    command: "c:\\users\\qt\\MSVC.bat {{.Env.PYSIDE_VIRTUALENV}}\\Scripts\\python.exe create_wheels.py --verbose 3{{.Env.CI_COMMON_SBOM_ARGS}}"
+    executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
     maxTimeInSeconds: 14400
     maxTimeBetweenOutput: 300
     enable_if:
@@ -124,7 +129,8 @@ instructions:
     userMessageOnFailure: >
          Failed to create wheels for Windows
   - type: ExecuteCommand
-    command: "{{.Env.PYSIDE_VIRTUALENV}}/bin/python create_wheels.py --verbose 3"
+    command: "{{.Env.PYSIDE_VIRTUALENV}}/bin/python create_wheels.py --verbose 3{{.Env.CI_COMMON_SBOM_ARGS}}"
+    executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
     maxTimeInSeconds: 14400
     maxTimeBetweenOutput: 300
     enable_if:
