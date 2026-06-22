@@ -136,6 +136,10 @@ class PysideBuildWheel(WheelSbomDistInfoMixin, _bdist_wheel, CommandMixin):
         return '-'.join(components)
 
     def sbom_source_dirs(self) -> list[Path]:
+        # Skip possible stale SBOMs left in the install prefix by an earlier '--sbom' build.
+        if not OPTION["SBOM"]:
+            return []
+
         # Read this project's SBOM documents from the CMake install prefix.
         build_command = self.get_finalized_command('build')
         sbom_root = Path(build_command.install_dir) / "share" / "sbom"

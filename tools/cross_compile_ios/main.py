@@ -71,6 +71,9 @@ def cross_compile(args: argparse.Namespace) -> None:
     if args.reuse_build:
         cmd.append("--reuse-build")
 
+    if args.sbom:
+        cmd.append("--sbom")
+
     if dry_run:
         print(" ".join(cmd))
         return
@@ -110,6 +113,9 @@ def main():
     parser.add_argument("--reuse-build", action="store_true",
                         help="Reuse the existing build directories and only rebuild "
                              "changed sources")
+
+    parser.add_argument("--sbom", action="store_true",
+                        help="Generate SBOM files")
 
     args = parser.parse_args()
 

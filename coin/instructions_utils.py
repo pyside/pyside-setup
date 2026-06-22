@@ -37,6 +37,7 @@ class CI:
             for f in _ci_features.split(", "):
                 self.FEATURES.append(f)
         self.RELEASE_CONF = options.has_option("packaging")
+        self.SBOM = options.has_option("sbom")
         self.TEST_PHASE = options.option_value("phase")
         if self.TEST_PHASE not in ["ALL", "BUILD"]:
             self.TEST_PHASE = "ALL"
@@ -238,6 +239,9 @@ def call_setup(python_ver, ci, phase, log, buildnro=0):
 
         if ci.USE_SCCACHE:
             cmd += [f"--compiler-launcher={ci.USE_SCCACHE}"]
+
+        if ci.SBOM:
+            cmd += ["--sbom"]
 
         if is_snapshot_build():
             cmd += ["--snapshot-build"]
