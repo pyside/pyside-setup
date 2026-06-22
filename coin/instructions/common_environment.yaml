@@ -120,6 +120,16 @@ instructions:
           property: features
           contains_value: Sccache
     - type: EnvironmentVariable
+      variableName: CI_COMMON_SBOM_ARGS
+      variableValue: ""
+    - type: AppendToEnvironmentVariable
+      variableName: CI_COMMON_SBOM_ARGS
+      variableValue: " --sbom"
+      enable_if:
+          condition: property
+          property: features
+          contains_value: GenerateSBOM
+    - type: EnvironmentVariable
       variableName: CI_OS
       variableValue: "MacOS"
       enable_if:
