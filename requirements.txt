@@ -9,3 +9,6 @@ patchelf==0.17.2; sys_platform == 'linux'
 numpy==2.2.0; python_version == '3.10'
 numpy==2.4.6; python_version > '3.10'
 mypy>=1.15.0    # note: 3.13 with disable-gil is not compiled yet
+
+# Requirements for running SBOM related utilities
+-r requirements-sbom.txt
