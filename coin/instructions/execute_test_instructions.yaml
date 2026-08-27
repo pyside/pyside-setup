@@ -35,6 +35,30 @@ instructions:
           - condition: property
             property: target.os
             not_equals_value: Android
+          - condition: property
+            property: features
+            not_contains_value: FreeThreading
+    userMessageOnFailure: >
+         Failed to execute test instructions on arm mac
+  - type: ExecuteCommand
+    command: "python3 -u coin_test_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} --instdir=/Users/qt/work/install --targetOs={{.Env.CI_OS}} --hostArch=ARM64 --targetArch={{.Env.CI_TARGET_ARCHITECTURE}} --osVer={{.Env.HOST_OSVERSION_COIN}} --pythonexe={{.Env.PY_VERSION}}"
+    maxTimeInSeconds: 14400
+    maxTimeBetweenOutput: 1200
+    enable_if:
+        condition: and
+        conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: host.arch
+            equals_value: ARM64
+          - condition: property
+            property: target.os
+            not_equals_value: Android
+          - condition: property
+            property: features
+            contains_value: FreeThreading
     userMessageOnFailure: >
          Failed to execute test instructions on arm mac
   - type: ExecuteCommand
@@ -53,6 +77,30 @@ instructions:
           - condition: property
             property: target.os
             not_equals_value: Android
+          - condition: property
+            property: features
+            not_contains_value: FreeThreading
+    userMessageOnFailure: >
+         Failed to execute test instructions on macOS
+  - type: ExecuteCommand
+    command: "python3 -u coin_test_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} --instdir=/Users/qt/work/install --targetOs={{.Env.CI_OS}} --hostArch=X86_64 --targetArch={{.Env.CI_TARGET_ARCHITECTURE}} --pythonexe={{.Env.PY_VERSION}}"
+    maxTimeInSeconds: 14400
+    maxTimeBetweenOutput: 1200
+    enable_if:
+        condition: and
+        conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: host.arch
+            equals_value: X86_64
+          - condition: property
+            property: target.os
+            not_equals_value: Android
+          - condition: property
+            property: features
+            contains_value: FreeThreading
     userMessageOnFailure: >
          Failed to execute test instructions on macOS
   - type: ExecuteCommand

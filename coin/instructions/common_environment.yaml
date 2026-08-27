@@ -435,6 +435,149 @@ instructions:
             property: host.arch
             equals_value: ARM64
 
+    # The x86_64 macOS test hosts have no pyenv. Every macOS host that runs the
+    # free-threaded build needs exactly this Python (no limited API), so install
+    # pyenv there the way the arm hosts are provisioned.
+    - type: ExecuteCommand
+      command: >-
+          curl -fsSL -o /Users/qt/pyenv-installer
+          https://ci-files01-hki.ci.qt.io/input/python/pyenv/pyenv-installer
+      maxTimeInSeconds: 1200
+      maxTimeBetweenOutput: 1200
+      enable_if:
+          condition: and
+          conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: host.arch
+            equals_value: X86_64
+          - condition: property
+            property: features
+            contains_value: FreeThreading
+      userMessageOnFailure: >
+          Failed to download pyenv installer
+    - type: ExecuteCommand
+      command: "bash /Users/qt/pyenv-installer"
+      maxTimeInSeconds: 1200
+      maxTimeBetweenOutput: 1200
+      enable_if:
+          condition: and
+          conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: host.arch
+            equals_value: X86_64
+          - condition: property
+            property: features
+            contains_value: FreeThreading
+      userMessageOnFailure: >
+          Failed to run pyenv installer
+    - type: EnvironmentVariable
+      variableName: PYENV_ROOT
+      variableValue: "/Users/qt/.pyenv"
+      enable_if:
+          condition: and
+          conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: host.arch
+            equals_value: X86_64
+          - condition: property
+            property: features
+            contains_value: FreeThreading
+    - type: PrependToEnvironmentVariable
+      variableName: PATH
+      variableValue: "/Users/qt/.pyenv/bin:"
+      enable_if:
+          condition: and
+          conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: host.arch
+            equals_value: X86_64
+          - condition: property
+            property: features
+            contains_value: FreeThreading
+
+    # The bindings need 3.14.7t or later (string interning can detach before, gh-149162).
+    # A provisioned pyenv may predate that definition: update it first.
+    - type: ExecuteCommand
+      command: "git -C /Users/qt/.pyenv pull --ff-only"
+      maxTimeInSeconds: 1200
+      maxTimeBetweenOutput: 1200
+      enable_if:
+          condition: and
+          conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: features
+            contains_value: FreeThreading
+      userMessageOnFailure: >
+          Failed to update pyenv
+    # The mirror may lack the tarball; without the checksum skip pyenv falls back to python.org.
+    - type: ExecuteCommand
+      command: "env -u PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM pyenv install --skip-existing 3.14.10t"
+      maxTimeInSeconds: 14400
+      maxTimeBetweenOutput: 1200
+      enable_if:
+          condition: and
+          conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: features
+            contains_value: FreeThreading
+      userMessageOnFailure: >
+          Failed to install python 3.14.10t
+
+    - type: PrependToEnvironmentVariable
+      variableName: PATH
+      variableValue: "/Users/qt/.pyenv/versions/3.14.10t/bin:"
+      enable_if:
+          condition: and
+          conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: features
+            contains_value: FreeThreading
+    - type: EnvironmentVariable
+      variableName: interpreter
+      variableValue: "python3.14t"
+      enable_if:
+          condition: and
+          conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: features
+            contains_value: FreeThreading
+    - type: EnvironmentVariable
+      variableName: PY_VERSION
+      variableValue: "3.14t"
+      enable_if:
+          condition: and
+          conditions:
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+          - condition: property
+            property: features
+            contains_value: FreeThreading
+
     - type: ExecuteCommand
       command: "wget https://ci-files01-hki.ci.qt.io/input/python/pyenv/pyenv-installer"
       maxTimeInSeconds: 14400

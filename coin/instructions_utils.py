@@ -26,6 +26,7 @@ class CI:
         self.HOST_OS_VER = options.option_value("osVer")
         self.ENV_INSTALL_DIR = options.option_value("instdir")
         self.ENV_AGENT_DIR = options.option_value("agentdir") or "."
+        self.FREE_THREADED_PYTHON = options.option_value("pythonexe")
         self.COMPILER = options.option_value("compiler")
         self.USE_SCCACHE = options.option_value("compiler-launcher")
         self.INTEGRATION_ID = options.option_value("coinIntegrationId") or str(
@@ -131,6 +132,9 @@ def get_architecture(ci):
 
 
 def get_python_version(ci):
+
+    if ci.FREE_THREADED_PYTHON:
+        return ci.FREE_THREADED_PYTHON
     python_ver = "3"
     if ci.HOST_OS_VER in ["macos_13", "macos_14"]:
         python_ver = "3.11"
@@ -231,8 +235,11 @@ def call_setup(python_ver, ci, phase, log, buildnro=0):
             "--unity",
             "--build-tests",
             "--log-level=verbose",
-            "--limited-api=yes",
         ]
+        if python_ver.endswith("t"):
+            cmd += ["--limited-api=no"]
+        else:
+            cmd += ["--limited-api=yes"]
 
         if ci.TARGET_ARCH == "X86_64-ARM64":
             cmd += ["--macos-arch='x86_64;arm64'"]

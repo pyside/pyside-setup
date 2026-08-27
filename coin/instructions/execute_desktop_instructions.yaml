@@ -40,6 +40,28 @@ instructions:
         - condition: property
           property: host.os
           equals_value: MacOS
+        - condition: property
+          property: features
+          not_contains_value: FreeThreading
+    userMessageOnFailure: >
+         Failed to execute build instructions on macOS
+  - type: ExecuteCommand
+    command: "python3 -u coin_build_instructions.py --os={{.Env.CI_OS}} {{.Env.CI_PACKAGING_FEATURE}} {{.Env.CI_USE_SCCACHE}}{{.Env.CI_COMMON_SBOM_ARGS}} --instdir=/Users/qt/work/install  --targetOs={{.Env.CI_OS}} --hostArch=X86_64 --targetArch=X86_64-ARM64 --phase=ALL --pythonexe={{.Env.PY_VERSION}}"
+    executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
+    maxTimeInSeconds: 14400
+    maxTimeBetweenOutput: 1200
+    enable_if:
+        condition: and
+        conditions:
+        - condition: property
+          property: target.arch
+          equals_value: X86_64-ARM64
+        - condition: property
+          property: host.os
+          equals_value: MacOS
+        - condition: property
+          property: features
+          contains_value: FreeThreading
     userMessageOnFailure: >
          Failed to execute build instructions on macOS
   - type: EnvironmentVariable
