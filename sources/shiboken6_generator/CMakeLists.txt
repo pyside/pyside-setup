@@ -31,5 +31,11 @@ add_subdirectory(doc)
 
 if(BUILD_TESTS)
     enable_testing()
+    if(SHIBOKEN_PYTHON_FREE_THREADED)
+        # Windows' pyconfig.h leaves Py_GIL_DISABLED to the build.
+        if(WIN32)
+            add_compile_definitions("Py_GIL_DISABLED=1")
+        endif()
+    endif()
     add_subdirectory(tests)
 endif()

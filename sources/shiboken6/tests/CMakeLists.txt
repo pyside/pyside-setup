@@ -7,6 +7,13 @@ if(BUILD_TESTS)
     find_package(Qt${QT_MAJOR_VERSION}Test 6.0 REQUIRED)
 endif()
 
+# Failpoint names vs. call sites; here as libshiboken precedes enable_testing().
+if(SHIBOKEN_PYTHON_FREE_THREADED)
+    add_test(NAME failpoint_names
+             COMMAND ${Python_EXECUTABLE}
+                     "${CMAKE_CURRENT_SOURCE_DIR}/../libshiboken/check_failpoint_names.py")
+endif()
+
 add_subdirectory(libminimal)
 if(NOT DEFINED MINIMAL_TESTS)
     add_subdirectory(libsample)

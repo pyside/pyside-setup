@@ -132,4 +132,43 @@ PepModule_Add(module, "__version_info__", version);
 PyModule_AddStringConstant(module, "__version__", SHIBOKEN_VERSION);
 VoidPtr::addVoidPtrToModule(module);
 Shiboken::initShibokenSupport(module);
+#ifdef Py_GIL_DISABLED
+// Free-threaded test hooks; an add-function would change the GIL build
+static PyMethodDef freeThreadingFunctions[] = {
+    {"ftOptionFlags", [](PyObject *, PyObject *) -> PyObject * {
+        return PyLong_FromUnsignedLongLong(Shiboken::FreeThreading::optionFlags());
+    }, METH_NOARGS, nullptr},
+#ifndef SBK_NO_FAILPOINTS
+    {"armFailpoint", [](PyObject *, PyObject *args) -> PyObject * {
+        const char *name = nullptr;
+        int timeoutMs = 5000;
+        if (PyArg_ParseTuple(args, "s|i:armFailpoint", &name, &timeoutMs) == 0)
+            return nullptr;
+        return PyBool_FromLong(Shiboken::armFailpoint(name, timeoutMs));
+    }, METH_VARARGS, nullptr},
+    {"releaseFailpoint", [](PyObject *, PyObject *arg) -> PyObject * {
+        const char *name = PyUnicode_AsUTF8(arg);
+        if (name == nullptr)
+            return nullptr;
+        return PyBool_FromLong(Shiboken::releaseFailpoint(name));
+    }, METH_O, nullptr},
+    {"failpointReached", [](PyObject *, PyObject *arg) -> PyObject * {
+        const char *name = PyUnicode_AsUTF8(arg);
+        if (name == nullptr)
+            return nullptr;
+        return PyBool_FromLong(Shiboken::failpointReached(name));
+    }, METH_O, nullptr},
+    {"clearFailpoints", [](PyObject *, PyObject *) -> PyObject * {
+        Shiboken::clearFailpoints();
+        Py_RETURN_NONE;
+    }, METH_NOARGS, nullptr},
+    {"failpointNames", [](PyObject *, PyObject *) -> PyObject * {
+        return PyUnicode_FromString(Shiboken::failpointNames());
+    }, METH_NOARGS, nullptr},
+#endif // SBK_NO_FAILPOINTS
+    {nullptr, nullptr, 0, nullptr}
+};
+if (PyModule_AddFunctions(module, freeThreadingFunctions) < 0)
+    return -1;
+#endif // Py_GIL_DISABLED
 // @snippet init

@@ -334,6 +334,13 @@ macro(shiboken_find_required_python)
 
     shiboken_validate_python_version()
 
+    # Free-threaded: "t" in the SOABI (cpython-314t-darwin, cp314t-win_amd64);
+    # also for cross builds.
+    set(SHIBOKEN_PYTHON_FREE_THREADED FALSE)
+    if(Python_SOABI MATCHES "^cp(ython-)?[0-9]+t")
+        set(SHIBOKEN_PYTHON_FREE_THREADED TRUE)
+    endif()
+
     set(SHIBOKEN_PYTHON_INTERPRETER "${Python_EXECUTABLE}")
     set_property(GLOBAL PROPERTY SHIBOKEN_PYTHON_INTERPRETER "${Python_EXECUTABLE}")
 endmacro()

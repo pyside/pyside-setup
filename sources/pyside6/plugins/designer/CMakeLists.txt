@@ -41,6 +41,12 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_definitions(PySidePlugin PRIVATE "-DNDEBUG")
 endif()
 
+if(SHIBOKEN_PYTHON_FREE_THREADED)
+    if(WIN32)
+        target_compile_definitions(PySidePlugin PRIVATE "-DPy_GIL_DISABLED=1")
+    endif()
+endif()
+
 target_include_directories(PySidePlugin PRIVATE ../uitools)
 
 set_target_properties(PySidePlugin PROPERTIES

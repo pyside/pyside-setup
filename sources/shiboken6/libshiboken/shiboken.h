@@ -17,6 +17,10 @@
 #include "sbkbindingutils.h"
 #include "sbkconverter.h"
 #include "sbkenum.h"
+#ifdef Py_GIL_DISABLED
+#include "sbkfailpoint.h"
+#include "sbkftoptions.h"
+#endif
 #include "sbkerrors.h"
 #include "sbkmodule.h"
 #include "sbkstring.h"
