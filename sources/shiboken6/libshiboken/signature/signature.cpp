@@ -299,6 +299,28 @@ static PyObject *make_snake_case_name(PyObject * /* self */, PyObject *arg)
 // This avoids an extra function level in tracebacks that is irritating.
 //
 
+#ifdef Py_GIL_DISABLED
+// Free-threaded builds have no __feature__: refuse it, pass on the rest.
+static PyObject *feature_import(PyObject * /* self */, PyObject *args, PyObject *kwds)
+{
+    PyObject *name = PyTuple_Size(args) > 0 ? PyTuple_GetItem(args, 0) : nullptr;
+    if (name == nullptr && kwds != nullptr)
+        name = PyDict_GetItemString(kwds, "name");
+    if (name != nullptr && PyUnicode_Check(name)
+        && PyUnicode_CompareWithASCIIString(name, "__feature__") == 0) {
+        PyErr_SetString(PyExc_ImportError,
+                        "__feature__ is not available in free-threaded builds");
+        return nullptr;
+    }
+    Shiboken::AutoDecRef builtins(PepEval_GetFrameBuiltins());
+    PyObject *origImportFunc{};
+    if (PyDict_GetItemStringRef(builtins.object(), "__orig_import__", &origImportFunc) <= 0)
+        Py_FatalError("libshiboken: builtins has no \"__orig_import__\" function");
+    PyObject *ret = PyObject_Call(origImportFunc, args, kwds);
+    Py_DECREF(origImportFunc);
+    return ret;
+}
+#else // Py_GIL_DISABLED
 static PyObject *feature_import(PyObject * /* self */, PyObject *args, PyObject *kwds)
 {
     auto *pyside_globals = signatureGlobals();
@@ -338,6 +360,7 @@ static PyObject *feature_import(PyObject * /* self */, PyObject *args, PyObject 
     }
     return ret;
 }
+#endif // Py_GIL_DISABLED
 
 #ifdef __clang__
 #  pragma clang diagnostic push

@@ -15,11 +15,9 @@
 
     \brief What libshiboken adds when Python runs without a GIL.
 
-    Everything in this group exists only where \c Py_GIL_DISABLED is defined.
-    A build with a GIL compiles the base's code unchanged.
-
-    Each measure has a bit in Shiboken::FreeThreading::Option. A test clears
-    the bit to show that the defect the measure prevents comes back.
+    Only where \c Py_GIL_DISABLED is defined. Free-threaded builds have no
+    lazy loading and no \c __feature__. Each measure has a bit in
+    Shiboken::FreeThreading::Option.
 */
 
 /*!

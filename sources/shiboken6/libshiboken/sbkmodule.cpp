@@ -229,6 +229,10 @@ static PyTypeObject *incarnateType(PyObject *module, const std::string &name,
 // the creation of the type(s), this is efficient.
 void loadLazyClassesWithNameStd(const std::string &name)
 {
+#ifdef Py_GIL_DISABLED
+    // Free-threaded builds create every type in its module's exec, not here.
+    return;
+#endif
     for (auto &tableIter : moduleData()->moduleToFuncs) {
         auto &nameToFunc = tableIter.second;
         auto funcIter = nameToFunc.find(name);
@@ -250,6 +254,9 @@ void loadLazyClassesWithName(const char *name)
 // PYSIDE-2898: Use a name list to pick the toplevel types.
 void resolveLazyClasses(PyObject *module)
 {
+#ifdef Py_GIL_DISABLED
+    return;     // every type is created in its module's exec
+#endif
     // - locate the module in the moduleTofuncs mapping
     auto &moduleToFuncs = moduleData()->moduleToFuncs;
     auto tableIter = moduleToFuncs.find(module);
@@ -275,6 +282,7 @@ void resolveLazyClasses(PyObject *module)
     }
 }
 
+#ifndef Py_GIL_DISABLED
 // PYSIDE-2404: Override the gettattr function of modules.
 static getattrofunc origModuleGetattro{};
 
@@ -312,6 +320,7 @@ static PyObject *PyModule_lazyGetAttro(PyObject *module, PyObject *name)
     }
     return ret;
 }
+#endif // !Py_GIL_DISABLED
 
 // PYSIDE-2404: Supply a new module dir for not yet visible entries.
 //              This modification is only for "our" modules.
@@ -478,6 +487,10 @@ static bool shouldLazyLoad(const std::string &modName)
 
 static int lazyLoadDefault()
 {
+#ifdef Py_GIL_DISABLED
+    // Free-threaded builds create every type at import.
+    return 0;
+#else
 #ifndef PYPY_VERSION
     int result = 1;
 #else
@@ -486,6 +499,7 @@ static int lazyLoadDefault()
     if (auto *flag = getenv("PYSIDE6_OPTION_LAZY"))
         result = std::atoi(flag);
     return result;
+#endif
 }
 
 static bool shouldLoadImmediately(PyObject *module)
@@ -574,6 +588,7 @@ PyObject *import(const char *moduleName)
     return module;
 }
 
+#ifndef Py_GIL_DISABLED
 static PyObject *lazy_import(PyObject * /* self */, PyObject *args, PyObject *kwds)
 {
     auto *ret = PyObject_Call(moduleData()->origImportFunc, args, kwds);
@@ -600,6 +615,7 @@ static PyMethodDef lazy_methods[] = {
 #ifdef __clang__
 #  pragma clang diagnostic pop
 #endif
+#endif // !Py_GIL_DISABLED
 
 PyObject *createOnly(const char * /* moduleName */, PyModuleDef *moduleData)
 
@@ -637,6 +653,8 @@ void exec(PyObject *module)
     if (isImportStar(module))
         data->dontLazyLoad.insert(PyModule_GetName(module));
 
+    // Free-threaded builds have no lazy loading: no getattr patch, no import redirection.
+#ifndef Py_GIL_DISABLED
     if (!data->lazy_init) {
         // Install the getattr patch.
         origModuleGetattro = PyModule_Type.tp_getattro;
@@ -649,6 +667,7 @@ void exec(PyObject *module)
         PyDict_SetItemString(builtins.object(), "__import__", func);
         data->lazy_init = true;
     }
+#endif // !Py_GIL_DISABLED
     // PYSIDE-2404: Nuitka inserts some additional code in standalone mode
     //              in an invisible virtual module (i.e. `QtCore-postLoad`)
     //              that gets imported before the running import can call

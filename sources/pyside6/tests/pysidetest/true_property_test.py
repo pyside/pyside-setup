@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import sysconfig
 import unittest
 
 from pathlib import Path
@@ -15,14 +16,16 @@ init_test_paths(False)
 PYSIDE-2042: Tests true_property with inheritance
 """
 is_pypy = hasattr(sys, "pypy_version_info")
+is_ft = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
 
 from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QWidget, QSpinBox
-if not is_pypy:
+if not is_pypy and not is_ft:
     from __feature__ import true_property  # noqa
 from helper.usesqapplication import UsesQApplication
 
 
+@unittest.skipIf(is_ft, "free-threaded builds have no __feature__")
 @unittest.skipIf(is_pypy, "__feature__ cannot yet be used with PyPy")
 class TruePropertyInheritanceTest(UsesQApplication):
 

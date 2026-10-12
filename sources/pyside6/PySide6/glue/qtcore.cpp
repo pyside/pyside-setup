@@ -392,7 +392,10 @@ PySide::runCleanupFunctions();
 // @snippet qt-qflag
 
 // @snippet qt-init-feature
+// Free-threaded builds have no __feature__: no selection takes effect.
+#ifndef Py_GIL_DISABLED
 PySide::Feature::init();
+#endif
 // @snippet qt-init-feature
 
 // @snippet qt-pysideinit

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import sysconfig
 import unittest
 
 from pathlib import Path
@@ -15,6 +16,7 @@ from PySide6.QtCore import Property, QSize
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 
 is_pypy = hasattr(sys, "pypy_version_info")
+is_ft = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
 if not is_pypy:
     from PySide6.support import feature  # noqa
 
@@ -33,6 +35,7 @@ class Window(QWidget):
         super().__init__()
 
 
+@unittest.skipIf(is_ft, "free-threaded builds have no __feature__")
 @unittest.skipIf(is_pypy, "__feature__ cannot yet be used with PyPy")
 class FeatureTest(unittest.TestCase):
     def setUp(self):

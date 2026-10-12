@@ -204,4 +204,6 @@ PYSIDE_TEST(pyenum_relax_options_and_lazy_star_test.py)
 # Free-threaded builds only
 if(SHIBOKEN_PYTHON_FREE_THREADED)
     PYSIDE_TEST(all_modules_gil_test.py)
+    PYSIDE_TEST(feature_off_test.py)
+    PYSIDE_TEST(lazy_loading_off_test.py)
 endif()

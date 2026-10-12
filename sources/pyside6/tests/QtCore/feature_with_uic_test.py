@@ -14,6 +14,7 @@ PYSIDE-1626: Switch early in `BindingManager::getOverride`.
 
 import os
 import sys
+import sysconfig
 import unittest
 
 from pathlib import Path
@@ -44,6 +45,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setupUi(self)
 
 
+@unittest.skipIf(sysconfig.get_config_var("Py_GIL_DISABLED"),
+                 "free-threaded builds have no __feature__")
 @unittest.skipIf(hasattr(sys, "pypy_version_info"),
                  "__feature__ cannot yet be used with PyPy")
 class FeatureTest(UsesQApplication):

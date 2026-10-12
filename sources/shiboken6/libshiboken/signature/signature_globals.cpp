@@ -201,6 +201,11 @@ static int init_phase_2(safe_globals_struc *p, PyMethodDef *methods)
         PyObject *ret = PyObject_CallFunctionObjArgs(post_init_func, nullptr);
         if (ret == nullptr)
             break;
+#ifdef Py_GIL_DISABLED
+        // Free-threaded builds have no __feature__: take back what post_init published
+        if (PyDict_PopString(PyImport_GetModuleDict(), "__feature__", nullptr) < 0)
+            break;
+#endif
 
         return 0;
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import sysconfig
 import unittest
 
 from pathlib import Path
@@ -15,14 +16,16 @@ init_test_paths(False)
 PYSIDE-2029: Tests that snake_case is isolated from imported modules
 """
 is_pypy = hasattr(sys, "pypy_version_info")
+is_ft = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
 
 from PySide6.QtWidgets import QWidget
-if not is_pypy:
+if not is_pypy and not is_ft:
     from __feature__ import snake_case  # noqa
 from helper.usesqapplication import UsesQApplication
 
-import snake_case_imported
-import snake_case_imported_no_snake_case
+if not is_ft:
+    import snake_case_imported
+    import snake_case_imported_no_snake_case
 
 
 class TrWidget(QWidget):
@@ -32,6 +35,7 @@ class TrWidget(QWidget):
         self.set_window_title(t)
 
 
+@unittest.skipIf(is_ft, "free-threaded builds have no __feature__")
 @unittest.skipIf(is_pypy, "__feature__ cannot yet be used with PyPy")
 class SnakeCaseNoPropagateTest(UsesQApplication):
 

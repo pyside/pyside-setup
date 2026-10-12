@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import sysconfig
 import unittest
 
 from pathlib import Path
@@ -17,6 +18,7 @@ from PySide6.QtGui import QColor, QAction
 from PySide6.QtWidgets import QApplication, QLabel, QFrame
 
 is_pypy = hasattr(sys, "pypy_version_info")
+is_ft = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
 if not is_pypy:
     from PySide6.support import feature
 
@@ -47,6 +49,7 @@ class ConstructorPropertiesTest(unittest.TestCase):
         ))
 
     # PYSIDE-1705: The same with snake_case
+    @unittest.skipIf(is_ft, "free-threaded builds have no __feature__")
     @unittest.skipIf(is_pypy, "feature switching is not yet possible in PyPy")
     def testCallConstructor_snake(self):
         from __feature__ import snake_case  # noqa: F401
@@ -63,6 +66,7 @@ class ConstructorPropertiesTest(unittest.TestCase):
         ))
 
     # PYSIDE-1705: The same with true_property
+    @unittest.skipIf(is_ft, "free-threaded builds have no __feature__")
     @unittest.skipIf(is_pypy, "feature switching is not yet possible in PyPy")
     def testCallConstructor_prop(self):
         from __feature__ import true_property  # noqa: F401
@@ -79,6 +83,7 @@ class ConstructorPropertiesTest(unittest.TestCase):
         ))
 
     # PYSIDE-1705: The same with snake_case and true_property
+    @unittest.skipIf(is_ft, "free-threaded builds have no __feature__")
     @unittest.skipIf(is_pypy, "feature switching is not yet possible in PyPy")
     def testCallConstructor_prop_snake(self):
         from __feature__ import snake_case, true_property  # noqa: F401

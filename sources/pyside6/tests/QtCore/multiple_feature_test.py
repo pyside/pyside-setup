@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import sysconfig
 import unittest
 
 from pathlib import Path
@@ -14,6 +15,7 @@ init_test_paths(False)
 from PySide6.QtCore import QCborArray, QObject
 
 is_pypy = hasattr(sys, "pypy_version_info")
+is_ft = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
 if not is_pypy:
     from PySide6.support import feature
 
@@ -37,6 +39,7 @@ def xprint(*args, **kw):
         print(*args, **kw)
 
 
+@unittest.skipIf(is_ft, "free-threaded builds have no __feature__")
 @unittest.skipIf(is_pypy, "__feature__ cannot yet be used with PyPy")
 class FeaturesTest(unittest.TestCase):
 

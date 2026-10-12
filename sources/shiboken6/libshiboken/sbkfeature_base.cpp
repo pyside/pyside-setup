@@ -70,6 +70,12 @@ void setSelectableFeatureCallback(SelectableFeatureCallback func)
 
 SelectableFeatureHook initSelectableFeature(SelectableFeatureHook func)
 {
+#ifdef Py_GIL_DISABLED
+    // There is no __feature__: the hook stays null and is not written, since
+    // other threads read it while a subclass is created.
+    if (func == nullptr)
+        return nullptr;
+#endif
     auto ret = SelectFeatureSet;
     SelectFeatureSet = func;
     if (featureCb)

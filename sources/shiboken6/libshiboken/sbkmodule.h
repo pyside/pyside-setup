@@ -29,11 +29,15 @@ LIBSHIBOKEN_API PyTypeObject *get(TypeInitStruct &typeStruct);
 
 /*!
     Makes sure that classes mentioned by \a name really exist (PYSIDE-2404).
+    On free-threaded builds, it does nothing: every type exists once its
+    module is imported.
 */
 LIBSHIBOKEN_API void loadLazyClassesWithName(const char *name);
 
 /*!
     Incarnates all classes of \a module for star imports (PYSIDE-2404).
+    On free-threaded builds, it does nothing: every type exists once its
+    module is imported.
 */
 LIBSHIBOKEN_API void resolveLazyClasses(PyObject *module);
 
