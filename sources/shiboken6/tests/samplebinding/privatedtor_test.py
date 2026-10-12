@@ -8,6 +8,7 @@ from __future__ import annotations
 import gc
 import os
 import sys
+import sysconfig
 import unittest
 
 from pathlib import Path
@@ -66,6 +67,8 @@ class PrivateDtorTest(unittest.TestCase):
         self.assertEqual(pd3.instanceCalls(), calls + 2)
         self.assertEqual(sys.getrefcount(pd3), refcnt)
 
+    @unittest.skipIf(sysconfig.get_config_var("Py_GIL_DISABLED"),
+                     "free-threaded: see refcount_freethreading.py")
     @unittest.skipUnless(hasattr(sys, "getrefcount"), f"{sys.implementation.name} has no refcount")
     def testClassDecref(self):
         # Bug was that class PyTypeObject wasn't decrefed when instance

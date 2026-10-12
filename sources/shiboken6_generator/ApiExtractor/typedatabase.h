@@ -8,6 +8,7 @@
 #include "include.h"
 #include "modifications_typedefs.h"
 #include "typedatabase_typedefs.h"
+#include "typesystem_enums.h"
 
 #include <QtCore/qregularexpression.h>
 #include <QtCore/qstringlist.h>
@@ -96,6 +97,7 @@ public:
     void addRequiredTargetImport(const QString &moduleName);
 
     QStringList typesystemKeywords() const;
+    TypeSystem::ModuleGil moduleGil() const;
 
     IncludeList extraIncludes(const QString &className) const;
 

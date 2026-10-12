@@ -128,6 +128,10 @@ QList<OptionDescription> TypeDatabase::options()
          "be processed to extract types (e.g. Qt include paths in a yocto sysroot)"_s},
         {u"keywords=keyword1[,keyword2,...]"_s,
          u"A comma-separated list of keywords for conditional typesystem parsing"_s},
+        {u"module-uses-gil=<yes|no|auto>"_s,
+         u"Whether a module uses the GIL in a free-threaded build (default: yes;\n"
+         "auto: not used when compiled with Py_GIL_DISABLED);\n"
+         "the module-uses-gil attribute of the typesystem element overrides it"_s},
     };
 }
 
@@ -138,6 +142,7 @@ struct TypeDatabaseOptions
     QStringList m_typesystemKeywords;
     QStringList m_typesystemPaths;
     bool m_suppressWarnings = true;
+    TypeSystem::ModuleGil m_moduleGil = TypeSystem::ModuleGil::Used;
 };
 
 class TypeDatabaseOptionsParser : public OptionsParser
@@ -199,6 +204,18 @@ bool TypeDatabaseOptionsParser::handleOption(const QString &key, const QString &
 
     if (key == u"keywords") {
         m_options->m_typesystemKeywords = value.split(u',');
+        return true;
+    }
+
+    if (key == u"module-uses-gil") {
+        if (value == u"yes" || value == u"true")
+            m_options->m_moduleGil = TypeSystem::ModuleGil::Used;
+        else if (value == u"no" || value == u"false")
+            m_options->m_moduleGil = TypeSystem::ModuleGil::NotUsed;
+        else if (value == u"auto")
+            m_options->m_moduleGil = TypeSystem::ModuleGil::Auto;
+        else
+            throw Exception(u"Invalid value \""_s + value + u"\" of module-uses-gil."_s);
         return true;
     }
 
@@ -454,6 +471,11 @@ static QStringList platformKeywords()
         break;
     }
     return {};
+}
+
+TypeSystem::ModuleGil TypeDatabase::moduleGil() const
+{
+    return d->m_moduleGil;
 }
 
 QStringList TypeDatabase::typesystemKeywords() const

@@ -594,6 +594,19 @@ static std::optional<TypeSystem::SnakeCase> snakeCaseFromAttribute(QStringView n
     return lookupEnum<Qt::CaseSensitive>(haystack, needle);
 }
 
+static std::optional<TypeSystem::ModuleGil> moduleGilFromAttribute(QStringView needle)
+{
+    using ModuleGilLookup = EnumLookup<TypeSystem::ModuleGil>;
+    static const std::array haystack{
+        ModuleGilLookup{u"yes", TypeSystem::ModuleGil::Used},
+        ModuleGilLookup{u"true", TypeSystem::ModuleGil::Used},
+        ModuleGilLookup{u"no", TypeSystem::ModuleGil::NotUsed},
+        ModuleGilLookup{u"false", TypeSystem::ModuleGil::NotUsed},
+        ModuleGilLookup{u"auto", TypeSystem::ModuleGil::Auto},
+    };
+    return lookupEnum<Qt::CaseInsensitive>(haystack, needle);
+}
+
 static std::optional<TypeSystem::Visibility> visibilityFromAttribute(QStringView needle)
 {
     using VisibilityLookup = EnumLookup<TypeSystem::Visibility>;
@@ -2319,6 +2332,8 @@ TypeSystemTypeEntryPtr TypeSystemParser::parseRootElement(const ConditionalStrea
     if (add) {
         moduleEntry = std::make_shared<TypeSystemTypeEntry>(m_defaultPackage, since,
                                                             currentParentTypeEntry());
+        // The attribute overrides the command line default
+        moduleEntry->setModuleGil(m_context->db->moduleGil());
     }
 
     for (auto i = attributes->size() - 1; i >= 0; --i) {
@@ -2350,8 +2365,14 @@ TypeSystemTypeEntryPtr TypeSystemParser::parseRootElement(const ConditionalStrea
         } else if (name == "namespace-end"_L1) {
             moduleEntry->setNamespaceEnd(attributes->takeAt(i).value().toString());
         } else if (name == usesGilAttribute) {
-            moduleEntry->setUsesGil(convertBoolean(attributes->takeAt(i).value(),
-                                                   usesGilAttribute, true));
+            const auto attribute = attributes->takeAt(i);
+            const auto moduleGilOpt = moduleGilFromAttribute(attribute.value());
+            if (moduleGilOpt.has_value()) {
+                moduleEntry->setModuleGil(moduleGilOpt.value());
+            } else {
+                qCWarning(lcShiboken, "%s",
+                          qPrintable(msgInvalidAttributeValue(attribute)));
+            }
         }
     }
 

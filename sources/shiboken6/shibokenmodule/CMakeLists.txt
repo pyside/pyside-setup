@@ -10,6 +10,9 @@ set(shibokenmodule_TYPESYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/typesystem_shiboken.xm
 
 shiboken_get_tool_shell_wrapper(shiboken tool_wrapper)
 
+# The module does not need the GIL in a free-threaded build
+list(APPEND GENERATOR_EXTRA_FLAGS --module-uses-gil=auto)
+
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mjb_rejected_classes.log"
     BYPRODUCTS ${sample_SRC}

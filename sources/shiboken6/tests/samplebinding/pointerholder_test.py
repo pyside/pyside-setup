@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import sysconfig
 import unittest
 
 from pathlib import Path
@@ -28,6 +29,8 @@ class TestPointerHolder(unittest.TestCase):
         ph = PointerHolder(a)
         self.assertEqual(ph.pointer(), a)
 
+    @unittest.skipIf(sysconfig.get_config_var("Py_GIL_DISABLED"),
+                     "free-threaded: see refcount_freethreading.py")
     @unittest.skipUnless(hasattr(sys, "getrefcount"), f"{sys.implementation.name} has no refcount")
     def testReferenceCounting(self):
         '''Test reference counting when retrieving data with PointerHolder.pointer().'''

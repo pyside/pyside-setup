@@ -6,6 +6,7 @@ from __future__ import annotations
 
 '''Tests for using Shiboken-based bindings with python threads'''
 
+import contextlib
 import logging
 import os
 from random import random
@@ -20,6 +21,10 @@ from shiboken_paths import init_paths
 init_paths()
 
 import sample
+
+# Bucket is not thread-safe: without a GIL, its two threads take turns
+BUCKET_LOCK = (contextlib.nullcontext() if getattr(sys, "_is_gil_enabled", lambda: True)()
+               else threading.Lock())
 
 #logging.basicConfig(level=logging.DEBUG)
 
@@ -38,7 +43,8 @@ class Producer(threading.Thread):
     def run(self):
         while self.runs < self.max_runs:
             value = int(random() * 10) % 10
-            self.bucket.push(value)
+            with BUCKET_LOCK:
+                self.bucket.push(value)
             self.production_list.append(value)
             logging.debug(f'PRODUCER - pushed {value}')
             self.runs += 1
@@ -58,8 +64,9 @@ class Consumer(threading.Thread):
 
     def run(self):
         while self.runs < self.max_runs:
-            if not self.bucket.empty():
-                value = self.bucket.pop()
+            with BUCKET_LOCK:
+                value = None if self.bucket.empty() else self.bucket.pop()
+            if value is not None:
                 self.consumption_list.append(value)
                 logging.debug(f'CONSUMER - got {value}')
                 self.runs += 1

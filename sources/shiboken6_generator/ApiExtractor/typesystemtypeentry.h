@@ -40,8 +40,8 @@ public:
     const QString &namespaceEnd() const;
     void setNamespaceEnd(const QString &n);
 
-    bool usesGil() const;
-    void setUsesGil(bool g);
+    TypeSystem::ModuleGil moduleGil() const;
+    void setModuleGil(TypeSystem::ModuleGil g);
 
 protected:
     explicit TypeSystemTypeEntry(TypeEntryPrivate *d);

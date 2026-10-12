@@ -105,6 +105,9 @@ make_path(testbinding_typesystem_path ${PYSIDE_PACKAGE_SOURCE_DIR}
 
 shiboken_get_tool_shell_wrapper(shiboken tool_wrapper)
 
+# The test binding does not need the GIL in a free-threaded build
+list(APPEND GENERATOR_EXTRA_FLAGS --module-uses-gil=auto)
+
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mjb_rejected_classes.log"
     BYPRODUCTS ${testbinding_SRC}
@@ -197,3 +200,8 @@ PYSIDE_TEST(typedef_signal_test.py)
 PYSIDE_TEST(version_test.py)
 PYSIDE_TEST(mock_as_slot_test.py)
 PYSIDE_TEST(pyenum_relax_options_and_lazy_star_test.py)
+
+# Free-threaded builds only
+if(SHIBOKEN_PYTHON_FREE_THREADED)
+    PYSIDE_TEST(all_modules_gil_test.py)
+endif()

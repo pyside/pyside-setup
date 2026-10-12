@@ -89,6 +89,12 @@ enum class BoolCast : std::uint8_t { // Generate nb_bool (overriding command lin
     Enabled
 };
 
+enum class ModuleGil : std::uint8_t { // Py_mod_gil in a free-threaded build
+    Used,
+    NotUsed,
+    Auto // NotUsed if Py_GIL_DISABLED is defined, else Used
+};
+
 enum class CPythonType : std::uint8_t
 {
     Bool,

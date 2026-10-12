@@ -83,7 +83,7 @@ public:
     bool m_stream = false;
     bool m_private = false;
     bool m_builtin = false;
-    bool m_usesGil = true;
+    TypeSystem::ModuleGil m_moduleGil = TypeSystem::ModuleGil::Used;
 };
 
 TypeEntryPrivate::TypeEntryPrivate(const QString &entryName, TypeEntry::Type t, const QVersionNumber &vr,
@@ -963,16 +963,16 @@ void TypeSystemTypeEntry::setNamespaceEnd(const QString &n)
     d->m_namespaceEnd = n;
 }
 
-bool TypeSystemTypeEntry::usesGil() const
+TypeSystem::ModuleGil TypeSystemTypeEntry::moduleGil() const
 {
     S_D(const TypeSystemTypeEntry);
-    return d->m_usesGil;
+    return d->m_moduleGil;
 }
 
-void TypeSystemTypeEntry::setUsesGil(bool g)
+void TypeSystemTypeEntry::setModuleGil(TypeSystem::ModuleGil g)
 {
     S_D(TypeSystemTypeEntry);
-    d->m_usesGil = g;
+    d->m_moduleGil = g;
 }
 
 TypeSystem::SnakeCase TypeSystemTypeEntry::snakeCase() const

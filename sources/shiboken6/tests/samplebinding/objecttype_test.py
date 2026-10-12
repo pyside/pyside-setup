@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import sysconfig
 import unittest
 
 from pathlib import Path
@@ -88,6 +89,8 @@ class ObjectTypeTest(unittest.TestCase):
 
         Shiboken.invalidate(parents)
 
+    @unittest.skipIf(sysconfig.get_config_var("Py_GIL_DISABLED"),
+                     "free-threaded: see refcount_freethreading.py")
     @unittest.skipUnless(hasattr(sys, "getrefcount"), f"{sys.implementation.name} has no refcount")
     def testClassDecref(self):
         # Bug was that class PyTypeObject wasn't decrefed when instance died

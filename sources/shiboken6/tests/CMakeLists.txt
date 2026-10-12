@@ -37,6 +37,9 @@ if (CMAKE_CROSSCOMPILING)
          "--compiler-path=${CMAKE_CXX_COMPILER}")
 endif()
 
+# The test bindings do not need the GIL in a free-threaded build
+list(APPEND GENERATOR_EXTRA_FLAGS --module-uses-gil=auto)
+
 add_subdirectory(minimalbinding)
 if(NOT DEFINED MINIMAL_TESTS)
     add_subdirectory(samplebinding)
@@ -90,3 +93,13 @@ foreach(test_file ${TEST_FILES})
         set_tests_properties(${test_name} PROPERTIES WILL_FAIL TRUE)
     endif()
 endforeach()
+
+# Free-threaded builds only; not *_test.py, so the glob above skips them.
+if(SHIBOKEN_PYTHON_FREE_THREADED)
+    foreach(ft_test samplebinding/refcount_freethreading)
+        string(REPLACE "binding/" "_" ft_name ${ft_test})
+        add_test(${ft_name} ${Python_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/${ft_test}.py")
+        set_tests_properties(${ft_name} PROPERTIES ENVIRONMENT "BUILD_DIR=${BUILD_DIR}"
+                                                   TIMEOUT ${CTEST_TESTING_TIMEOUT})
+    endforeach()
+endif()

@@ -332,6 +332,7 @@ macro(create_pyside_module)
         --output-directory=${CMAKE_CURRENT_BINARY_DIR}
         --license-file=${CMAKE_CURRENT_SOURCE_DIR}/../licensecomment.txt
         --lean-headers
+        --module-uses-gil=auto
         --api-version=${SUPPORTED_QT_VERSION})
 
     if(qt_dir_after_includes)

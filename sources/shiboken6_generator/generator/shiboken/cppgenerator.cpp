@@ -6596,10 +6596,15 @@ static void writeSubModuleHandling(TextStream &s, const QString &moduleName,
         << indent << "return nullptr;\n" << outdent << outdent << "}\n";
 }
 
-static const char *gilMode()
+static TypeSystem::ModuleGil defaultModuleGil()
 {
-    const bool usesGil = TypeDatabase::instance()->defaultTypeSystemType()->usesGil();
-    return usesGil ? "Py_MOD_GIL_USED" : "Py_MOD_GIL_NOT_USED";
+    return TypeDatabase::instance()->defaultTypeSystemType()->moduleGil();
+}
+
+// Under Py_GIL_DISABLED, Auto means not used
+static const char *gilMode(TypeSystem::ModuleGil gil)
+{
+    return gil == TypeSystem::ModuleGil::Used ? "Py_MOD_GIL_USED" : "Py_MOD_GIL_NOT_USED";
 }
 
 // < 3.15
@@ -6613,7 +6618,7 @@ static QString writeModuleDef(TextStream &s, const QString &moduleName,
     {Py_mod_multiple_interpreters, Py_MOD_MULTIPLE_INTERPRETERS_NOT_SUPPORTED},
 #endif
 #ifdef Py_GIL_DISABLED
-    {Py_mod_gil, )" << gilMode() << R"(},
+    {Py_mod_gil, )" << gilMode(defaultModuleGil()) << R"(},
 #endif
     {0, nullptr}
 };
@@ -7122,8 +7127,19 @@ static PySlot )" << modName << R"(ModuleSlots[] = {
     PySlot_PTR(Py_mod_exec, )" << execFunc << R"(),
     PySlot_PTR_STATIC(Py_mod_methods, )" << modName << R"(Methods),
     PySlot_PTR(Py_mod_multiple_interpreters, Py_MOD_MULTIPLE_INTERPRETERS_NOT_SUPPORTED),
-    PySlot_PTR(Py_mod_gil, )" << gilMode() << R"(),
-    PySlot_PTR(0, nullptr)
+)";
+    const auto gil = defaultModuleGil();
+    if (gil == TypeSystem::ModuleGil::Auto) {
+        s << R"(#ifdef Py_GIL_DISABLED
+    PySlot_PTR(Py_mod_gil, Py_MOD_GIL_NOT_USED),
+#else
+    PySlot_PTR(Py_mod_gil, Py_MOD_GIL_USED),
+#endif
+)";
+    } else {
+        s << "    PySlot_PTR(Py_mod_gil, " << gilMode(gil) << "),\n";
+    }
+    s << R"(    PySlot_PTR(0, nullptr)
 };
 
 )";
