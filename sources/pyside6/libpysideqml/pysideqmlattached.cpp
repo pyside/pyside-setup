@@ -24,6 +24,10 @@
 
 #include <algorithm>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 // The QmlAttached decorator modifies QmlElement to register an attached property
 // type. Due to the (reverse) execution order of decorators, it needs to follow
 // QmlElement.
@@ -73,7 +77,12 @@ static PyTypeObject *createPySideQmlAttachedType()
 
 PyTypeObject *PySideQmlAttached_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createPySideQmlAttachedType);
+#else
     static auto *type = createPySideQmlAttachedType();
+#endif
     return type;
 }
 
@@ -97,7 +106,11 @@ static QObject *attachedFactoryHelper(PyTypeObject *attachingType, QObject *o)
     Q_ASSERT(converter);
 
     static const char methodName[] = "qmlAttachedProperties";
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString pyMethodName(methodName);
+#else
     static PyObject *const pyMethodName = Shiboken::String::createStaticString(methodName);
+#endif
     auto *attachingTypeObj = reinterpret_cast<PyObject *>(attachingType);
     Shiboken::AutoDecRef pyResult(PyObject_CallMethodObjArgs(attachingTypeObj, pyMethodName,
                                                              attachingTypeObj /* self */,

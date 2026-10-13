@@ -35,9 +35,7 @@ def _check_gil_stays_off():
     if sys._is_gil_enabled():
         print("importing PySide6 (shiboken6) re-enabled the GIL")
         return 1
-    # QtQmlFeatures declares Py_MOD_GIL_USED by hand. It is not generated, so
-    # the generator option does not reach it; left to its authors to decide.
-    for name in (n for n in PySide6.__all__ if n != "QtQmlFeatures"):
+    for name in PySide6.__all__:
         try:
             exec(f"import PySide6.{name}")
         except ImportError as e:

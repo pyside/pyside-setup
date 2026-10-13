@@ -19,6 +19,10 @@
 #include "pyside6_qtcore_python.h"
 #include "pyside6_qtqml_python.h"
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 // VolatileBool (volatile bool) type definition.
 
 static PyObject *
@@ -136,7 +140,12 @@ static PyTypeObject *createVolatileBoolType()
 
 PyTypeObject *QtQml_VolatileBool_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createVolatileBoolType);
+#else
     static auto *type = createVolatileBoolType();
+#endif
     return type;
 }
 

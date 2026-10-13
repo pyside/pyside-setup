@@ -13,6 +13,10 @@
 #include <sbktypefactory.h>
 #include <signature.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 using namespace Shiboken;
 
 struct PySideEffect
@@ -133,7 +137,12 @@ static PyTypeObject *createEffectType()
 
 static PyTypeObject *PySideEffect_TypeF()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createEffectType);
+#else
     static auto *type = createEffectType();
+#endif
     return type;
 }
 
@@ -143,7 +152,11 @@ namespace PySide::Effect {
 
 PyObject *effectAttrName()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString s("_pyside_effect");
+#else
     static PyObject *const s = Shiboken::String::createStaticString("_pyside_effect");
+#endif
     return s;
 }
 

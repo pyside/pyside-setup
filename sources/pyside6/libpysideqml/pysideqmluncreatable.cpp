@@ -13,6 +13,10 @@
 #include <QtCore/qbytearray.h>
 #include <private/qmetaobjectbuilder_p.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 using namespace Qt::StringLiterals;
 
 class PySideQmlUncreatablePrivate : public PySide::ClassDecorator::StringDecoratorPrivate
@@ -84,7 +88,12 @@ PyTypeObject *createPySideQmlUncreatableType(void)
 
 PyTypeObject *PySideQmlUncreatable_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createPySideQmlUncreatableType);
+#else
     static auto *type = createPySideQmlUncreatableType();
+#endif
     return type;
 }
 

@@ -12,6 +12,10 @@
 #include <sbktypefactory.h>
 #include <signature.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 using namespace Shiboken;
 
 struct PySideWatch
@@ -140,7 +144,12 @@ static PyTypeObject *createWatchType()
 
 static PyTypeObject *PySideWatch_TypeF()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createWatchType);
+#else
     static auto *type = createWatchType();
+#endif
     return type;
 }
 
@@ -150,7 +159,11 @@ namespace PySide::Watch {
 
 PyObject *watchAttrName()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString s("_pyside_watch");
+#else
     static PyObject *const s = Shiboken::String::createStaticString("_pyside_watch");
+#endif
     return s;
 }
 

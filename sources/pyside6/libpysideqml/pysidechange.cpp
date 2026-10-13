@@ -10,6 +10,10 @@
 #include <sbktypefactory.h>
 #include <signature.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 struct PySideChangeData
 {
     PyObject *name;   // str
@@ -165,7 +169,12 @@ static PyTypeObject *createChangeType()
 
 PyTypeObject *PySideChange_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createChangeType);
+#else
     static auto *type = createChangeType();
+#endif
     return type;
 }
 

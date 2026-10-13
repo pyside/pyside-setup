@@ -9,6 +9,10 @@
 #include <sbktypefactory.h>
 #include <signature.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 class PySideQmlNamedElementPrivate : public PySide::ClassDecorator::StringDecoratorPrivate
 {
 public:
@@ -53,7 +57,12 @@ PyTypeObject *createPySideQmlNamedElementType(void)
 
 PyTypeObject *PySideQmlNamedElement_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createPySideQmlNamedElementType);
+#else
     static auto *type = createPySideQmlNamedElementType();
+#endif
     return type;
 }
 

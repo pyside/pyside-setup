@@ -16,6 +16,10 @@
 
 #include <QtCore/qdebug.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 // The QmlForeign decorator modifies QmlElement to create a different type
 // QmlElement.
 class PySideQmlForeignPrivate : public PySide::ClassDecorator::TypeDecoratorPrivate
@@ -69,7 +73,12 @@ static PyTypeObject *createPySideQmlForeignType()
 
 PyTypeObject *PySideQmlForeign_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createPySideQmlForeignType);
+#else
     static auto *type = createPySideQmlForeignType();
+#endif
     return type;
 }
 

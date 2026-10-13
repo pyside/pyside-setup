@@ -70,14 +70,34 @@ PYSIDE_API PyObject *getHiddenDataFromQObject(QObject *cppSelf, PyObject *self, 
 
 /*!
     Returns the mutex for accessing QObject memory helpers from
-    multiple threads.
+    multiple threads. Free-threaded builds do not take it: the address is
+    per thread (QmlPlacement).
 */
 PYSIDE_API QMutex &nextQObjectMemoryAddrMutex();
 PYSIDE_API void *nextQObjectMemoryAddr();
 /*!
     Sets the address \a addr where to allocate the next QObject (for QML).
+    On free-threaded builds, a constructor takes the address only for the
+    type a QmlPlacement names; use QmlPlacement to place an object.
 */
 PYSIDE_API void setNextQObjectMemoryAddr(void *addr);
+
+#ifdef Py_GIL_DISABLED
+PYSIDE_API void *nextQObjectMemoryAddr(PyTypeObject *forType);
+
+class PYSIDE_API QmlPlacement
+{
+public:
+    Q_DISABLE_COPY_MOVE(QmlPlacement)
+
+    explicit QmlPlacement(void *memory, PyTypeObject *forType);
+    ~QmlPlacement();
+
+private:
+    void *m_outerAddr;
+    PyTypeObject *m_outerType;
+};
+#endif // Py_GIL_DISABLED
 
 PYSIDE_API PyObject *getWrapperForQObject(QObject *cppSelf, PyTypeObject *sbk_type);
 

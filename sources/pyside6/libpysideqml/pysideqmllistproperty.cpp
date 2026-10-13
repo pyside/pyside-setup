@@ -25,6 +25,10 @@
 
 #include <utility>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 using namespace Qt::StringLiterals;
 
 // This is the user data we store in the property.
@@ -253,7 +257,12 @@ PyTypeObject *PropertyList_TypeF(void)
 {
     // PYSIDE-2230: This was a wrong replacement by static AutoDecref.
     //              Never do that, deletes things way too late.
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createPropertyListType);
+#else
     static PyTypeObject *type = createPropertyListType();
+#endif
     return type;
 }
 

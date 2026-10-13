@@ -20,6 +20,10 @@
 
 #include <QtQml/qqml.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 // The QmlExtended decorator modifies QmlElement to register an extension.
 // Due to the (reverse) execution order of decorators, it needs to follow
 // QmlElement.
@@ -69,7 +73,12 @@ static PyTypeObject *createPySideQmlExtendedType()
 
 PyTypeObject *PySideQmlExtended_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createPySideQmlExtendedType);
+#else
     static auto *type = createPySideQmlExtendedType();
+#endif
     return type;
 }
 

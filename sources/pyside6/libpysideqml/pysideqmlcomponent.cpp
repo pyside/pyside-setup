@@ -9,10 +9,40 @@
 #include <sbkpython.h>
 #include <sbktypefactory.h>
 #include <signature.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#  include <sbkfailpoint.h>
+#  include <sbkftoptions.h>
+
+#  include <atomic>
+#endif
 
 using namespace Shiboken;
 
 // Python helper module
+#ifdef Py_GIL_DISABLED
+// Two threads importing the helper first: the first published is kept.
+static PyObject *getQmlComponentHelperModule()
+{
+    static std::atomic<PyObject *> helperModule{};
+    PyObject *published = helperModule.load(std::memory_order_acquire);
+    if (published != nullptr)
+        return published;
+    PyObject *candidate = PyImport_ImportModule("PySide6.support.qml_component_helper");
+    Shiboken::failpoint("qml-helper-before-publish");
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::QmlHelperModuleOnce)) {
+        helperModule.store(candidate, std::memory_order_release);
+        return candidate;
+    }
+    if (candidate == nullptr || helperModule.compare_exchange_strong(
+            published, candidate, std::memory_order_acq_rel)) {
+        return candidate;
+    }
+    Py_DECREF(candidate);
+    return published;
+}
+#else // Py_GIL_DISABLED
 static PyObject *getQmlComponentHelperModule()
 {
     // The GIL is held by all callers (Python C API path).
@@ -23,6 +53,7 @@ static PyObject *getQmlComponentHelperModule()
     }
     return helperModule;
 }
+#endif // Py_GIL_DISABLED
 
 struct PySideQmlComponent
 {
@@ -74,7 +105,12 @@ static PyTypeObject *createQmlComponentType()
 
 static PyTypeObject *PySideQmlComponent_TypeF()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createQmlComponentType);
+#else
     static auto *type = createQmlComponentType();
+#endif
     return type;
 }
 

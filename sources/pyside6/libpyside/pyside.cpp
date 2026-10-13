@@ -86,6 +86,10 @@ static QStack<PySide::CleanupFunction> cleanupFunctionList;
 // Used by QML (main thread), but needs to be protected against other
 // threads constructing QObject's.
 static void thread_local *qobjectNextAddr;
+#ifdef Py_GIL_DISABLED
+// The type QML asked for at qobjectNextAddr.
+static thread_local PyTypeObject *qobjectNextType;
+#endif
 
 QT_BEGIN_NAMESPACE
 extern bool qRegisterResourceData(int, const unsigned char *, const unsigned char *,
@@ -125,6 +129,9 @@ namespace PySide
 void init(PyObject *module)
 {
     qobjectNextAddr = nullptr;
+#ifdef Py_GIL_DISABLED
+    qobjectNextType = nullptr;
+#endif
     ClassInfo::init(module);
     Signal::init(module);
     Slot::init(module);
@@ -961,6 +968,48 @@ void setNextQObjectMemoryAddr(void *addr)
 {
     qobjectNextAddr = addr;
 }
+
+#ifdef Py_GIL_DISABLED
+/*!
+    \ingroup freethreading
+
+    The memory QML hands the constructor of a QObject of type \a forType, or
+    nullptr. Another type, built in \c __init__() before the base
+    constructor, does not take it.
+*/
+void *nextQObjectMemoryAddr(PyTypeObject *forType)
+{
+    if (forType != qobjectNextType
+        && Shiboken::FreeThreading::optionEnabled(
+               Shiboken::FreeThreading::Option::QmlPlacementType)) {
+        return nullptr;
+    }
+    return qobjectNextAddr;
+}
+
+/*!
+    \class PySide::QmlPlacement
+    \ingroup freethreading
+    \inmodule libpyside
+
+    One QML construction into given memory: the next QObject of type
+    \c forType is placed at \c memory. Thread-local, so no lock; a nested
+    construction restores the outer one's address.
+*/
+
+QmlPlacement::QmlPlacement(void *memory, PyTypeObject *forType)
+    : m_outerAddr(qobjectNextAddr), m_outerType(qobjectNextType)
+{
+    qobjectNextAddr = memory;
+    qobjectNextType = forType;
+}
+
+QmlPlacement::~QmlPlacement()
+{
+    qobjectNextAddr = m_outerAddr;
+    qobjectNextType = m_outerType;
+}
+#endif // Py_GIL_DISABLED
 
 } // namespace PySide
 

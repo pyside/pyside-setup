@@ -18,6 +18,11 @@
 #include <autodecref.h>
 #include <gilstate.h>
 #include <sbkconverter.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#  include <sbkfailpoint.h>
+#  include <sbkftoptions.h>
+#endif
 #include <sbkpep.h>
 #include <sbkstring.h>
 #include <sbktypefactory.h>
@@ -58,6 +63,17 @@ static inline QByteArray qmlElementKey()
 
 static void createInto(void *memory, void *type)
 {
+#ifdef Py_GIL_DISABLED
+    // The address is thread-local: no lock, which would block while Python runs.
+    std::optional<QMutexLocker<QMutex>> locker;
+    if (!Shiboken::FreeThreading::optionEnabled(Shiboken::FreeThreading::Option::QmlPlacementFree))
+        locker.emplace(&PySide::nextQObjectMemoryAddrMutex());
+    Shiboken::GilState state;
+    PySide::QmlPlacement placement(memory, reinterpret_cast<PyTypeObject *>(type));
+    PyObject *obj = PyObject_CallObject(reinterpret_cast<PyObject *>(type), nullptr);
+    if (!obj || PyErr_Occurred())
+        PyErr_Print();
+#else
     QMutexLocker locker(&PySide::nextQObjectMemoryAddrMutex());
     PySide::setNextQObjectMemoryAddr(memory);
     Shiboken::GilState state;
@@ -65,20 +81,33 @@ static void createInto(void *memory, void *type)
     if (!obj || PyErr_Occurred())
         PyErr_Print();
     PySide::setNextQObjectMemoryAddr(nullptr);
+#endif // Py_GIL_DISABLED
 }
 
 static PyTypeObject *qQmlEngineType()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> resultOnce;
+    PyTypeObject *const result =
+        resultOnce.get([] { return Shiboken::Conversions::getPythonTypeObject("QQmlEngine*"); });
+#else
     static PyTypeObject *const result =
         Shiboken::Conversions::getPythonTypeObject("QQmlEngine*");
+#endif
     assert(result);
     return result;
 }
 
 static PyTypeObject *qQJSValueType()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> resultOnce;
+    PyTypeObject *const result =
+        resultOnce.get([] { return Shiboken::Conversions::getPythonTypeObject("QJSValue*"); });
+#else
     static PyTypeObject *const result =
         Shiboken::Conversions::getPythonTypeObject("QJSValue*");
+#endif
     assert(result);
     return result;
 }
@@ -105,13 +134,35 @@ static inline bool isQmlParserStatus(const QMetaObject *o)
     return inheritsFrom(o, "QPyQmlParserStatus");
 }
 
+#ifdef Py_GIL_DISABLED
+// A module global, held in \a holder while read: another thread can rebind it.
+static PyObject *globalValue(PyObject *globals, const char *name, Shiboken::AutoDecRef &holder)
+{
+    PyObject *value{};
+    if (PyDict_GetItemStringRef(globals, name, &value) < 0)
+        PyErr_Clear();
+    if (Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::QmlImportGlobalsOwned))
+        holder.reset(value);
+    else
+        Py_XDECREF(value);
+    Shiboken::failpoint("qml-global-before-read");
+    return value;
+}
+#endif // Py_GIL_DISABLED
+
 static QByteArray getGlobalString(const char *name)
 {
     Shiboken::AutoDecRef globals(PepEval_GetFrameGlobals());
     if (globals.isNull())
         return {};
 
+#ifdef Py_GIL_DISABLED
+    Shiboken::AutoDecRef holder{};
+    PyObject *globalVar = globalValue(globals, name, holder);
+#else
     PyObject *globalVar = PyDict_GetItemString(globals, name);
+#endif
     if (globalVar == nullptr || PyUnicode_Check(globalVar) == 0)
         return {};
 
@@ -125,7 +176,12 @@ static int getGlobalInt(const char *name)
     if (globals.isNull())
         return -1;
 
+#ifdef Py_GIL_DISABLED
+    Shiboken::AutoDecRef holder{};
+    PyObject *globalVar = globalValue(globals, name, holder);
+#else
     PyObject *globalVar = PyDict_GetItemString(globals, name);
+#endif
     if (globalVar == nullptr || PyLong_Check(globalVar) == 0)
         return -1;
 

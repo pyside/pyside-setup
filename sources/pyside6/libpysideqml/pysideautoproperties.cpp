@@ -12,11 +12,41 @@
 #include <sbkpython.h>
 #include <sbktypefactory.h>
 #include <signature.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#  include <sbkfailpoint.h>
+#  include <sbkftoptions.h>
+
+#  include <atomic>
+#endif
 
 
 using namespace Shiboken;
 
 // Python helper module (loaded lazily)
+#ifdef Py_GIL_DISABLED
+// Two threads importing the helper first: the first published is kept
+static PyObject *getHelperModule()
+{
+    static std::atomic<PyObject *> helperModule{};
+    PyObject *published = helperModule.load(std::memory_order_acquire);
+    if (published != nullptr)
+        return published;
+    PyObject *candidate = PyImport_ImportModule("PySide6.support.auto_property_helper");
+    Shiboken::failpoint("qml-helper-before-publish");
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::QmlHelperModuleOnce)) {
+        helperModule.store(candidate, std::memory_order_release);
+        return candidate;
+    }
+    if (candidate == nullptr || helperModule.compare_exchange_strong(
+            published, candidate, std::memory_order_acq_rel)) {
+        return candidate;
+    }
+    Py_DECREF(candidate);
+    return published;
+}
+#else // Py_GIL_DISABLED
 static PyObject *getHelperModule()
 {
     // GIL is held by all callers (Python C API callbacks) so no extra lock needed.
@@ -25,6 +55,7 @@ static PyObject *getHelperModule()
         helperModule = PyImport_ImportModule("PySide6.support.auto_property_helper");
     return helperModule;
 }
+#endif // Py_GIL_DISABLED
 
 static PyObject *callHelperFunction(const char *funcName, PyObject *arg)
 {
@@ -147,7 +178,12 @@ static PyTypeObject *createAutoPropertiesType()
 
 static PyTypeObject *PySideAutoProperties_TypeF()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createAutoPropertiesType);
+#else
     static auto *type = createAutoPropertiesType();
+#endif
     return type;
 }
 

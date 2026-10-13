@@ -513,6 +513,42 @@ def test_signal_instance() -> str:
     return run_signal_slot("testFirstSignalAccessFromTwoThreads")
 
 
+def run_qml(method: str) -> str:
+    """One method of pysidetest/qml_freethreading_test.py."""
+    return run_unittest(TESTS_DIR / "pysidetest" / "qml_freethreading_test.py",
+                        f"QmlFreeThreadedTest.{method}")
+
+
+def test_qml_parallel() -> str:
+    """QML constructions in two threads with gc do not deadlock."""
+    return run_qml("testParallelConstruction")
+
+
+def test_qml_nested() -> str:
+    """A QML construction inside another one succeeds."""
+    return run_qml("testNestedConstruction")
+
+
+def test_qml_placed() -> str:
+    """A QObject built in __init__() does not take the memory of QML."""
+    return run_qml("testQObjectInInit")
+
+
+def test_qml_import_global() -> str:
+    """QML_IMPORT_NAME rebound during registration is read safely."""
+    return run_qml("testImportNameRebound")
+
+
+def test_qml_helper_auto() -> str:
+    """First auto_properties use in two threads publishes once."""
+    return run_qml("testFirstAutoPropertiesFromTwoThreads")
+
+
+def test_qml_helper_component() -> str:
+    """First load_qml_component() in two threads publishes once."""
+    return run_qml("testFirstComponentLoadFromTwoThreads")
+
+
 def test_one_wrapper_per_address() -> str:
     """Two threads converting one C++ object get one wrapper."""
     if gil_enabled():
@@ -764,6 +800,26 @@ TESTS = {
     "signal-instance": Test(test_signal_instance),
     "proof-signal-instance": Test(lambda: counterproof(
         "SignalInstancePublishOnce", "signal-instance", "two SignalInstances for one signal")),
+    "qml-parallel": Test(test_qml_parallel),
+    "proof-qml-parallel": Test(lambda: counterproof(
+        "QmlPlacementFree", "qml-parallel", "QML constructions in two threads deadlocked")),
+    "qml-nested": Test(test_qml_nested),
+    "proof-qml-nested": Test(lambda: counterproof(
+        "QmlPlacementFree", "qml-nested", "a nested QML construction failed")),
+    "qml-placed": Test(test_qml_placed),
+    "proof-qml-placed": Test(lambda: counterproof(
+        "QmlPlacementType", "qml-placed", "a QObject built in __init__ took QML's memory")),
+    "qml-import-global": Test(test_qml_import_global),
+    "proof-qml-import-global": Test(lambda: counterproof(
+        "QmlImportGlobalsOwned", "qml-import-global",
+        "the QML import name was read from a freed string")),
+    "qml-helper-auto": Test(test_qml_helper_auto),
+    "proof-qml-helper-auto": Test(lambda: counterproof(
+        "QmlHelperModuleOnce", "qml-helper-auto", "the helper module was published twice")),
+    "qml-helper-component": Test(test_qml_helper_component),
+    "proof-qml-helper-component": Test(lambda: counterproof(
+        "QmlHelperModuleOnce", "qml-helper-component",
+        "the helper module was published twice")),
 }
 
 

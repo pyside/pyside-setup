@@ -167,6 +167,18 @@ namespace Shiboken::FreeThreading {
     \value BuilderLookupUnlocked
            The builder is looked up before the builder lock: a key's
            \c __eq__ may wait for a thread that needs it.
+    \value QmlPlacementFree
+           A QML construction into given memory takes no process-wide lock:
+           constructions in other threads would wait while Python runs.
+    \value QmlPlacementType
+           Only a QObject of the requested type takes QML's memory, not one
+           built in its \c __init__().
+    \value QmlImportGlobalsOwned
+           The QML import globals of a module are held while read: another
+           thread may rebind them.
+    \value QmlHelperModuleOnce
+           The helper modules of PySide6.QtQmlFeatures are published once:
+           two first uses would store one each.
     \value SignalNameOnce
            The name of a signal attached after its class was made is set
            once: its first instances may be made in several threads.

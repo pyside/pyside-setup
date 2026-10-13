@@ -13,6 +13,10 @@
 #include <sbktypefactory.h>
 #include <signature.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 using namespace Shiboken;
 
 struct PySideComputed
@@ -117,7 +121,12 @@ static PyTypeObject *createComputedType()
 
 static PyTypeObject *PySideComputed_TypeF()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createComputedType);
+#else
     static auto *type = createComputedType();
+#endif
     return type;
 }
 
@@ -127,7 +136,11 @@ namespace PySide::Computed {
 
 PyObject *computedAttrName()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString s("_pyside_computed");
+#else
     static PyObject *const s = Shiboken::String::createStaticString("_pyside_computed");
+#endif
     return s;
 }
 
