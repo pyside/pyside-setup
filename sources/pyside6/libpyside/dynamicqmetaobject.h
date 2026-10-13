@@ -56,5 +56,9 @@ private:
     MetaObjectBuilderPrivate *m_d;
 };
 
+#ifdef Py_GIL_DISABLED
+bool checkMethodSignature(const QByteArray &signature);
+#endif
+
 }
 #endif

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 '''State shared by all types, against a second thread.'''
 
+import ctypes
 import gc
 import os
 import subprocess
@@ -14,13 +15,14 @@ import threading
 import time
 import types
 import unittest
+import weakref
 
 from pathlib import Path
 sys.path.append(os.fspath(Path(__file__).resolve().parents[1]))
 from init_paths import init_test_paths
 init_test_paths(False)
 
-from PySide6.QtCore import QCoreApplication, QObject, QTimer  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QObject, QTimer, Signal  # noqa: E402
 from shiboken6 import Shiboken  # noqa: E402
 
 FREE_THREADED = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
@@ -426,6 +428,29 @@ class TypeStateFreeThreadedTest(unittest.TestCase):
         self.churnWhile(self.classChurn(QEvent),
                         lambda: hasattr(QEvent, "NoSuchEnumShortcut"), 20000)
 
+    def testFirstInstancesNameLateSignals(self):
+        '''The first instances of a class, made at once, name its late signals once.'''
+        for _ in range(5000):
+            class Sub(QObject):
+                pass
+
+            Sub()
+            for i in range(32):
+                setattr(Sub, f"late_signal_with_a_long_name_{i}", Signal())
+            barrier = threading.Barrier(8)
+
+            def make():
+                barrier.wait()
+                Sub()
+
+            threads = [threading.Thread(target=make) for _ in range(8)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(str(Sub.late_signal_with_a_long_name_31),
+                             "late_signal_with_a_long_name_31()")
+
     def testClassInfoDictChanged(self):
         '''A dict given to ClassInfo and changed meanwhile does not crash.'''
         from PySide6.QtCore import ClassInfo
@@ -787,6 +812,292 @@ def _generic_enums(threads=4, classes=120, enums=40):
 def made_value(name):
     tag, i = (int(x) for x in name.split("_"))
     return tag * 10000 + i
+
+
+class SignalsOfNewInstanceTest(unittest.TestCase):
+    '''A new QObject has the signals its class has now.'''
+
+    def testSignalAddedToClass(self):
+        class Sub(QObject):
+            pass
+
+        self.assertNotIn("late", vars(Sub()))
+        Sub.late = Signal()
+        self.assertIn("late", vars(Sub()), "new instance misses a signal of its class")
+        del Sub.late
+        self.assertNotIn("late", vars(Sub()), "new instance has a removed signal")
+
+    def testSignalAddedToBase(self):
+        class Base(QObject):
+            pass
+
+        class Derived(Base):
+            pass
+
+        self.assertNotIn("late", vars(Derived()))
+        Base.late = Signal()
+        self.assertIn("late", vars(Derived()), "new instance misses a signal of its base")
+
+    def testSignalAddedToMixin(self):
+        '''A base of another metatype: a write to it does not pass Shiboken.ObjectType.'''
+        class Mixin:
+            pass
+
+        class Sub(Mixin, QObject):
+            pass
+
+        self.assertNotIn("late", vars(Sub()))
+        Mixin.late = Signal()
+        self.assertIn("late", vars(Sub()), "new instance misses a signal of its mixin")
+
+    @unittest.skipUnless(HAS_HOOKS, "needs the failpoint hooks of a debug build")
+    def testClassWrittenDuringListWalk(self):
+        '''A write while the first list of a class is made: the next instance sees it.'''
+        class Sub(QObject):
+            pass
+
+        self.assertTrue(Shiboken.armFailpoint("signal-list-after-walk"))
+        maker = threading.Thread(target=Sub)
+        maker.start()
+        self.assertTrue(wait_reached("signal-list-after-walk"))
+        Sub.late = Signal()
+        Shiboken.releaseFailpoint("signal-list-after-walk")
+        maker.join()
+        self.assertIn("late", vars(Sub()), "new instance misses the signal written during the walk")
+
+    def testBasesAssigned(self):
+        class First(QObject):
+            first = Signal()
+
+        class Second(QObject):
+            second = Signal()
+
+        class Sub(First):
+            pass
+
+        self.assertIn("first", vars(Sub()))
+        Sub.__bases__ = (Second,)
+        names = vars(Sub())
+        self.assertIn("second", names, "new instance misses a signal of its new base")
+        self.assertNotIn("first", names, "new instance has a signal of its old base")
+
+    def testClassChangedOftenerThanItHasVersions(self):
+        '''The list does not depend on tp_version_tag: a class changed more often
+        than CPython gives it tags (1000) still shows each signal.'''
+        class Sub(QObject):
+            pass
+
+        for _ in range(1100):
+            Sub.late = Signal()
+            self.assertIn("late", vars(Sub()), "new instance misses a signal of its class")
+            del Sub.late
+            self.assertNotIn("late", vars(Sub()), "new instance has a removed signal")
+
+    def exhaustVersions(self, cls):
+        '''Uses up the version tags of a class: CPython gives it 1000 at most.'''
+        assign = ctypes.pythonapi.PyUnstable_Type_AssignVersionTag
+        assign.argtypes = [ctypes.py_object]
+        assign.restype = ctypes.c_int
+        for i in range(1100):
+            cls.churn = i
+            assign(cls)
+        cls.churn = -1
+        self.assertEqual(assign(cls), 0, "the class still gets versions")
+
+    def testNoVersionAtFirstConstruction(self):
+        '''With the tags used up before the first construction, a new instance
+        still sees every signal.'''
+        class Sub(QObject):
+            pass
+
+        self.exhaustVersions(Sub)
+        Sub.late = Signal()
+        self.assertIn("late", vars(Sub()), "new instance misses a signal of its class")
+        del Sub.late
+        self.assertNotIn("late", vars(Sub()), "new instance has a removed signal")
+
+    def testVersionsRunOutAfterFirstConstruction(self):
+        '''With the tags used up after the list was made, a new instance still
+        sees a later signal.'''
+        class Sub(QObject):
+            pass
+
+        self.assertNotIn("late", vars(Sub()))
+        self.exhaustVersions(Sub)
+        Sub.late = Signal()
+        self.assertIn("late", vars(Sub()), "new instance misses a signal of its class")
+
+    def testBaseCollectedWithClass(self):
+        '''The list keeps no base alive: one gc pass collects a class and its base.'''
+        def make():
+            class Base(QObject):
+                pass
+
+            class Sub(Base):
+                pass
+
+            Sub()
+            return weakref.ref(Base), weakref.ref(Sub)
+
+        base, sub = make()
+        gc.collect()
+        self.assertIsNone(sub(), "the class outlives a gc pass")
+        self.assertIsNone(base(), "the base outlives the gc pass that collects its class")
+
+    def testLastWriteSeen(self):
+        '''Writers and constructors meet on fresh classes: the last write counts.'''
+        # With the GIL on, thread starts and writers wait for the makers. A short switch
+        # interval, and no object dying in the race (a destructor gives the GIL away),
+        # keep that to a fraction of a second.
+        self.addCleanup(sys.setswitchinterval, sys.getswitchinterval())
+        sys.setswitchinterval(1e-4)
+        for _ in range(150):
+            class Sub(QObject):
+                pass
+
+            Sub()
+            done = threading.Event()
+            made = []
+
+            def write(k):
+                for j in range(8):
+                    setattr(Sub, f"w{k}_{j}", Signal())
+                setattr(Sub, f"last{k}", Signal())
+
+            def construct():
+                while not done.is_set():
+                    made.append(Sub())
+
+            writers = [threading.Thread(target=write, args=(k,)) for k in range(2)]
+            makers = [threading.Thread(target=construct) for _ in range(2)]
+            for t in makers + writers:
+                t.start()
+            for t in writers:
+                t.join()
+            done.set()
+            for t in makers:
+                t.join()
+            made.clear()
+            names = vars(Sub())
+            for k in range(2):
+                self.assertIn(f"last{k}", names, "new instance misses the last written signal")
+
+    def testConstructionWaitsForClassWrite(self):
+        '''A construction while a class write is under way sees the written signal.
+
+        A dict watcher runs after CPython cleared the class version and before
+        it stores: its Python code keeps the locks of the write unless it
+        blocks. With SIGNAL_LIST_DETACH_IN_WRITE it blocks, which frees them
+        for the other thread; without the write count (ClassWriteCount) that
+        thread takes the stale list then: the proof that this test sees it.
+        '''
+        class Sub(QObject):
+            pass
+
+        detach = "SIGNAL_LIST_DETACH_IN_WRITE" in os.environ
+        Sub()
+        typeDict = next(r for r in gc.get_referents(Sub.__dict__) if isinstance(r, dict))
+        inWrite = [0]
+
+        def onWrite(event, _dict, _key, _value):
+            if event == 0:  # PyDict_EVENT_ADDED
+                inWrite[0] = 1
+                if detach:
+                    time.sleep(0.05)
+                else:
+                    for _ in range(200000):
+                        pass
+            return 0
+
+        Callback = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int, ctypes.c_void_p,
+                                    ctypes.c_void_p, ctypes.c_void_p)
+        callback = Callback(onWrite)
+        api = ctypes.pythonapi
+        api.PyDict_AddWatcher.argtypes = [Callback]
+        api.PyDict_AddWatcher.restype = ctypes.c_int
+        api.PyDict_Watch.argtypes = [ctypes.c_int, ctypes.py_object]
+        api.PyDict_Unwatch.argtypes = [ctypes.c_int, ctypes.py_object]
+        api.PyDict_ClearWatcher.argtypes = [ctypes.c_int]
+
+        def construct():
+            while not inWrite[0]:
+                pass
+            Sub()
+
+        watcher = api.PyDict_AddWatcher(callback)
+        self.assertGreaterEqual(watcher, 0)
+        wasEnabled = gc.isenabled()
+        gc.disable()  # a stopped world would free the locks as well
+        try:
+            self.assertEqual(api.PyDict_Watch(watcher, typeDict), 0)
+            maker = threading.Thread(target=construct)
+            writer = threading.Thread(target=setattr, args=(Sub, "late", Signal()))
+            maker.start()
+            writer.start()
+            writer.join()
+            maker.join()
+            api.PyDict_Unwatch(watcher, typeDict)
+        finally:
+            api.PyDict_ClearWatcher(watcher)
+            if wasEnabled:
+                gc.enable()
+        self.assertIn("late", vars(Sub()), "new instance misses the written signal")
+
+    def testClassChangedWhileConstructing(self):
+        '''Other threads construct objects while one changes the class.'''
+        class Sub(QObject):
+            fixed = Signal()
+
+        self.assertIn("fixed", vars(Sub()))  # The class has its list from here on
+        stop = threading.Event()
+        errors = []
+
+        def change():
+            while not stop.is_set():
+                Sub.changing = Signal()
+                del Sub.changing
+
+        def construct():
+            try:
+                for _ in range(3000):
+                    self.assertIn("fixed", vars(Sub()))
+            except BaseException as e:
+                errors.append(repr(e))
+
+        changer = threading.Thread(target=change)
+        makers = [threading.Thread(target=construct) for _ in range(4)]
+        changer.start()
+        for t in makers:
+            t.start()
+        for t in makers:
+            t.join()
+        stop.set()
+        changer.join()
+        self.assertEqual(errors, [])
+        Sub.final = Signal()
+        self.assertIn("final", vars(Sub()), "new instance misses a signal of its class")
+
+    def testSignalsReleasedWithTheClass(self):
+        '''A dead class holds on to none of its signals.'''
+        signal = Signal()
+
+        def make():
+            class Sub(QObject):
+                pass
+
+            Sub.late = signal
+            Sub()
+
+        def settled():
+            for _ in range(3):
+                gc.collect()
+            return sys.getrefcount(signal)
+
+        make()  # what a first use leaves behind
+        before = settled()
+        for _ in range(50):
+            make()
+        self.assertLess(settled() - before, 25, "dead classes hold their signals")
 
 
 if __name__ == '__main__':

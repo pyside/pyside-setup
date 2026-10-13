@@ -29,4 +29,16 @@ namespace PySide::SignalManager
     void handleMetaCallError();
 } // namespace PySide::SignalManager
 
+#ifdef Py_GIL_DISABLED
+namespace PySide
+{
+    class MetaObjectBuilder;
+}
+
+namespace PySide::SignalManager
+{
+    const QMetaObject *updateTypeMetaObject(MetaObjectBuilder &builder);
+} // namespace PySide::SignalManager
+#endif
+
 #endif // SIGNALMANAGER_P_H

@@ -213,6 +213,11 @@ if(SHIBOKEN_PYTHON_FREE_THREADED)
     PYSIDE_TEST(lazy_loading_off_test.py)
     PYSIDE_TEST(override_lookup_error_test.py)
     PYSIDE_TEST(owner_thread_deletion_test.py)
+    PYSIDE_TEST(signal_slot_freethreading_test.py)
     PYSIDE_TEST(state_lock_test.py)
     PYSIDE_TEST(type_state_freethreading_test.py)
+    # Thread stress, close to a minute on a small machine
+    math(EXPR stress_timeout "${CTEST_TESTING_TIMEOUT} * 3")
+    set_tests_properties(pysidetest_type_state_freethreading_test
+                         PROPERTIES TIMEOUT ${stress_timeout})
 endif()

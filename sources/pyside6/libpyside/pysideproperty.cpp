@@ -20,6 +20,10 @@
 
 #include <utility>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 using namespace Shiboken;
 
 using namespace Qt::StringLiterals;
@@ -101,7 +105,12 @@ static PyTypeObject *createPropertyType()
 
 PyTypeObject *PySideProperty_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createPropertyType);
+#else
     static auto *type = createPropertyType();
+#endif
     return type;
 }
 
@@ -282,7 +291,11 @@ static const char dataCapsuleKeyName[] = "_PropertyPrivate"; // key in keyword a
 static PySidePropertyBase *getDataFromKwArgs(PyObject *kwds)
 {
     if (kwds != nullptr && PyDict_Check(kwds) != 0) {
+#ifdef Py_GIL_DISABLED
+        static Shiboken::OnceString key(dataCapsuleKeyName);
+#else
         static PyObject *key = PyUnicode_InternFromString(dataCapsuleKeyName);
+#endif
         if (PyDict_Contains(kwds, key) != 0) {
             Shiboken::AutoDecRef data(PyDict_GetItem(kwds, key));
             if (PyCapsule_CheckExact(data.object()) != 0) {

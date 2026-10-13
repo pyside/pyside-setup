@@ -131,6 +131,60 @@ namespace Shiboken::FreeThreading {
            replaceModuleDict() leaves the module alone and returns false:
            another thread could see it between its two stores. PySide6
            computes __all__ at import.
+    \value MetaObjectBuilderLock
+           Adding a dynamic signal or slot and building a meta object take a
+           lock: two threads would write one builder.
+    \value InstanceBuilderPublishOnce
+           The first meta-object builder of an object is published once: two
+           threads would make one each.
+    \value ConnectionHashLock
+           The slot connection hash is used under a lock; Python and Qt run
+           outside it.
+    \value MethodReceiverUpgrade
+           A method slot holds its receiver per delivery; a receiver without
+           weak references is held by the connection.
+    \value SignalInstancePublishOnce
+           The first signal instance an object binds is published once: two
+           threads would make one each.
+    \value SenderTrackerOnce
+           The sender destruction tracker is created once: two first
+           connections would make one each.
+    \value RepeatedConnections
+           Each connection of a method has its own row: a method connected
+           twice is disconnected twice, and both go with the receiver.
+    \value DynamicMethodOnce
+           A dynamic signal or slot is added once, also when two threads add
+           it.
+    \value TypeBuilderLock
+           A type's meta object is built under the builder lock also for a
+           subtype or a registration.
+    \value SourceDeletionPending
+           A QObject handed to its owner thread for deletion counts as
+           deleted as a signal source, as with a GIL.
+    \value BuilderWarningUnlocked
+           The signature warning is issued before the builder lock: a
+           Python hook may wait for a thread that needs it.
+    \value BuilderLookupUnlocked
+           The builder is looked up before the builder lock: a key's
+           \c __eq__ may wait for a thread that needs it.
+    \value SignalNameOnce
+           The name of a signal attached after its class was made is set
+           once: its first instances may be made in several threads.
+    \value SignalClassList
+           A new QObject takes its signals from a list kept per class, not
+           from a copy of every class dict in the mro.
+    \value SignalClassListCheck
+           That list is only used while no class in the mro was written
+           since it was made.
+    \value ClassWriteCount
+           A write to the dict or the bases of a class of Shiboken.ObjectType
+           is counted, see Shiboken::ObjectType::ClassWrite.
+    \value SignalClassListOwnBases
+           A class with a base of another metatype gets no signal list: a
+           write to that base is not counted.
+    \value SignalClassListOrder
+           A signal list takes the write count of a class before it reads
+           the dict of that class.
     \value StaticInitDetached
            A thread that waits for the first value of a function-local
            static whose initializer can reach Python waits detached, see

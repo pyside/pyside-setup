@@ -12,6 +12,11 @@
 #include <helper.h>
 #include <gilstate.h>
 #include <pep384ext.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkfailpoint.h>
+#  include <sbkftoptions.h>
+#  include <sbkheldlocks.h>
+#endif
 
 #include <QtCore/qdebug.h>
 #include <QtCore/qcompare.h>
@@ -19,6 +24,11 @@
 #include <QtCore/qhash.h>
 #include <QtCore/qpointer.h>
 #include <QtCore/qthread.h>
+
+#ifdef Py_GIL_DISABLED
+#  include <mutex>
+#  include <optional>
+#endif
 
 namespace PySide
 {
@@ -93,6 +103,9 @@ public:
     ~MethodDynamicSlot() override;
 
     PyObject *pythonSelf() const { return m_pythonSelf; }
+#ifdef Py_GIL_DISABLED
+    PyObject *function() const { return m_function; }
+#endif
 
     void call(const QByteArrayList &parameterTypes, const char *returnType,
               void **cppArgs) override;
@@ -144,6 +157,12 @@ public:
 
     ~PysideReceiverMethodSlot() override;
 
+#ifdef Py_GIL_DISABLED
+    bool hasWeakRef() const { return m_weakRef != nullptr; }
+    void call(const QByteArrayList &parameterTypes, const char *returnType,
+              void **cppArgs) override;
+#endif
+
 private:
     PyObject *m_weakRef;
 };
@@ -181,6 +200,49 @@ PysideReceiverMethodSlot::~PysideReceiverMethodSlot()
     m_weakRef = nullptr;
 }
 
+#ifdef Py_GIL_DISABLED
+// Another thread may drop the receiver during a delivery: the delivery holds it.
+void PysideReceiverMethodSlot::call(const QByteArrayList &parameterTypes,
+                                    const char *returnType, void **cppArgs)
+{
+    PyObject *receiver = pythonSelf();
+    Shiboken::AutoDecRef owned{};
+    if (Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::MethodReceiverUpgrade)) {
+        PyObject *strong{};
+        PyWeakref_GetRef(m_weakRef, &strong); // null when gone or on error
+        owned.reset(strong);
+        receiver = strong;
+        if (receiver == nullptr) {
+            // Gone: its weak reference callback disconnects.
+            if (PyErr_Occurred() != nullptr)
+                SignalManager::handleMetaCallError();
+            return;
+        }
+    }
+    Shiboken::failpoint("method-receiver-before-bind");
+    Shiboken::AutoDecRef callable(PepExt_Type_CallDescrGet(function(), receiver, nullptr));
+    SignalManager::callPythonMetaMethod(parameterTypes, returnType, cppArgs, callable.object());
+    if (PyErr_Occurred() != nullptr)
+        SignalManager::handleMetaCallError();
+}
+
+// No weak references: null, the connection holds the bound method instead.
+static DynamicSlot *checkedMethodSlot(PysideReceiverMethodSlot *slot)
+{
+    if (slot->hasWeakRef()
+        || !Shiboken::FreeThreading::optionEnabled(
+               Shiboken::FreeThreading::Option::MethodReceiverUpgrade)) {
+        return slot;
+    }
+    if (PyErr_Occurred() != nullptr && !PyErr_ExceptionMatches(PyExc_TypeError))
+        PyErr_WriteUnraisable(slot->pythonSelf());
+    PyErr_Clear();
+    delete slot;
+    return nullptr;
+}
+#endif // Py_GIL_DISABLED
+
 DynamicSlot* DynamicSlot::create(PyObject *callback)
 {
     Shiboken::GilState gil;
@@ -189,15 +251,30 @@ DynamicSlot* DynamicSlot::create(PyObject *callback)
         PyObject *function = PyMethod_GET_FUNCTION(callback);
         Py_INCREF(function);
         PyObject *pythonSelf = PyMethod_GET_SELF(callback);
+#ifdef Py_GIL_DISABLED
+        if (auto *slot = checkedMethodSlot(new PysideReceiverMethodSlot(function, pythonSelf)))
+            return slot;
+        break;
+#else
         return new PysideReceiverMethodSlot(function, pythonSelf);
+#endif
     }
     case SlotType::CompiledMethod: {
         // PYSIDE-1523: PyMethod_Check is not accepting compiled form, we just go by attributes.
         PyObject *function = PyObject_GetAttr(callback, PySide::PySideName::im_func());
+#ifdef Py_GIL_DISABLED
+        // The slot owns the function and releases it in its destructor.
+        PyObject *pythonSelf = PyObject_GetAttr(callback, PySide::PySideName::im_self());
+        Py_DECREF(pythonSelf);
+        if (auto *slot = checkedMethodSlot(new PysideReceiverMethodSlot(function, pythonSelf)))
+            return slot;
+        break;
+#else
         Py_DECREF(function);
         PyObject *pythonSelf = PyObject_GetAttr(callback, PySide::PySideName::im_self());
         Py_DECREF(pythonSelf);
         return new PysideReceiverMethodSlot(function, pythonSelf);
+#endif
     }
     case SlotType::C_Function: // Treat C-function as normal callables
     case SlotType::Callable:
@@ -288,9 +365,40 @@ QDebug operator<<(QDebug debug, const QMetaObject::Connection &c)
     return debug;
 }
 
+#ifdef Py_GIL_DISABLED
+// One row per connection: each of a method's connections goes with its receiver.
+using ConnectionHash = QMultiHash<ConnectionKey, QMetaObject::Connection>;
+#else
 using ConnectionHash = QHash<ConnectionKey, QMetaObject::Connection>;
+#endif
 
 static ConnectionHash connectionHash;
+
+#ifdef Py_GIL_DISABLED
+static std::mutex &connectionHashMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+// Container work only under the lock: computing a key runs Python, and a Qt
+// disconnect can delete a receiver whose weak reference comes back here.
+class ConnectionHashLock
+{
+public:
+    Q_DISABLE_COPY_MOVE(ConnectionHashLock)
+
+    ConnectionHashLock()
+    {
+        if (Shiboken::FreeThreading::optionEnabled(
+                Shiboken::FreeThreading::Option::ConnectionHashLock))
+            m_guard.emplace(connectionHashMutex());
+    }
+
+private:
+    std::optional<Shiboken::TrackedGuard<std::mutex, Shiboken::RawLock::ConnectionHash>> m_guard;
+};
+#endif // Py_GIL_DISABLED
 
 static ConnectionKey connectionKey(const QObject *sender, int senderIndex,
                                    PyObject *callback)
@@ -339,6 +447,9 @@ public Q_SLOTS:
 void SenderSignalDeletionTracker::senderDestroyed(QObject *o)
 {
     Shiboken::GilState gil; // PYSIDE-3072
+#ifdef Py_GIL_DISABLED
+    ConnectionHashLock hashLock;
+#endif
     for (auto it = connectionHash.begin(); it != connectionHash.end(); ) {
         if (it.key().sender == o)
             it = connectionHash.erase(it);
@@ -355,8 +466,82 @@ void SenderSignalDeletionTracker::reparentOnQApp()
 
 static QPointer<SenderSignalDeletionTracker> senderSignalDeletionTracker;
 
+#ifdef Py_GIL_DISABLED
+static void clearConnectionHash();
+
+static std::mutex &senderTrackerMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+using SenderTrackerGuard = Shiboken::TrackedGuard<std::mutex, Shiboken::RawLock::SenderTracker>;
+
+static SenderSignalDeletionTracker *publishedSenderTracker()
+{
+    SenderTrackerGuard guard(senderTrackerMutex());
+    return senderSignalDeletionTracker.data();
+}
+
+// First connects in two threads would make one tracker each: a candidate is
+// built unlocked (a QObject, maybe moved) and only the first published is kept.
+static SenderSignalDeletionTracker *senderTracker()
+{
+    const bool once = Shiboken::FreeThreading::optionEnabled(
+        Shiboken::FreeThreading::Option::SenderTrackerOnce);
+    if (auto *tracker = once ? publishedSenderTracker() : senderSignalDeletionTracker.data())
+        return tracker;
+    Shiboken::failpoint("sender-tracker-before-create");
+    auto *app = QCoreApplication::instance();
+    const bool moved = app != nullptr && QThread::currentThread() != app->thread();
+    auto *candidate = new SenderSignalDeletionTracker(moved ? nullptr : app);
+    if (moved) {
+        candidate->moveToThread(app->thread());
+        QMetaObject::invokeMethod(candidate, "reparentOnQApp", Qt::QueuedConnection);
+    }
+    if (!once) {
+        senderSignalDeletionTracker = candidate;
+        Py_AtExit(clearConnectionHash);
+        return candidate;
+    }
+    SenderSignalDeletionTracker *winner = nullptr;
+    {
+        SenderTrackerGuard guard(senderTrackerMutex());
+        if (senderSignalDeletionTracker.isNull())
+            senderSignalDeletionTracker = candidate;
+        winner = senderSignalDeletionTracker.data();
+    }
+    if (winner == candidate) {
+        Py_AtExit(clearConnectionHash);
+    } else if (moved) {
+        candidate->deleteLater();
+    } else {
+        delete candidate;
+    }
+    return winner;
+}
+#endif // Py_GIL_DISABLED
+
 static void disconnectReceiver(PyObject *pythonSelf)
 {
+#ifdef Py_GIL_DISABLED
+    // The disconnects run after the lock: one can delete further receivers,
+    // which come back here (PYSIDE-88).
+    QList<QMetaObject::Connection> connections;
+    {
+        ConnectionHashLock hashLock;
+        for (auto it = connectionHash.begin(); it != connectionHash.end(); ) {
+            if (it.key().object == pythonSelf) {
+                connections.append(it.value()); // QTBUG-144929, take copy
+                it = connectionHash.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    for (const auto &connection : std::as_const(connections))
+        QObject::disconnect(connection);
+#else // Py_GIL_DISABLED
     // A check for reentrancy was added for PYSIDE-88, but has not been
     // observed yet.
     for (bool keepGoing = true; keepGoing; ) {
@@ -378,17 +563,39 @@ static void disconnectReceiver(PyObject *pythonSelf)
             }
         }
     }
+#endif // Py_GIL_DISABLED
 }
 
 static void clearConnectionHash()
 {
+#ifdef Py_GIL_DISABLED
+    ConnectionHashLock hashLock;
+#endif
     connectionHash.clear();
 }
 
 void registerSlotConnection(QObject *source, int signalIndex, PyObject *callback,
                             const QMetaObject::Connection &connection)
 {
+#ifdef Py_GIL_DISABLED
+    const ConnectionKey key = connectionKey(source, signalIndex, callback);
+    {
+        ConnectionHashLock hashLock;
+        if (Shiboken::FreeThreading::optionEnabled(
+                Shiboken::FreeThreading::Option::RepeatedConnections)) {
+            connectionHash.insert(key, connection);
+        } else {
+            connectionHash.replace(key, connection);
+        }
+    }
+#else
     connectionHash.insert(connectionKey(source, signalIndex, callback), connection);
+#endif // Py_GIL_DISABLED
+#ifdef Py_GIL_DISABLED
+    QObject::connect(source, &QObject::destroyed,
+                     senderTracker(), &SenderSignalDeletionTracker::senderDestroyed,
+                     Qt::UniqueConnection);
+#else
     if (senderSignalDeletionTracker.isNull()) {
         auto *app = QCoreApplication::instance();
         if (app == nullptr || QThread::currentThread() == app->thread()) {
@@ -405,10 +612,27 @@ void registerSlotConnection(QObject *source, int signalIndex, PyObject *callback
     QObject::connect(source, &QObject::destroyed,
                      senderSignalDeletionTracker, &SenderSignalDeletionTracker::senderDestroyed,
                      Qt::UniqueConnection);
+#endif // Py_GIL_DISABLED
 }
 
 bool disconnectSlot(QObject *source, int signalIndex, PyObject *callback)
 {
+#ifdef Py_GIL_DISABLED
+    const ConnectionKey key = connectionKey(source, signalIndex, callback);
+    QMetaObject::Connection connId;
+    bool ok = false;
+    {
+        ConnectionHashLock hashLock;
+        auto it = connectionHash.find(key);
+        ok = it != connectionHash.end();
+        if (ok) {
+            connId = it.value(); // QTBUG-144929, take copy
+            connectionHash.erase(it);
+        }
+    }
+    if (ok)
+        QObject::disconnect(connId);
+#else // Py_GIL_DISABLED
     auto it = connectionHash.find(connectionKey(source, signalIndex, callback));
     const bool ok = it != connectionHash.end();
     if (ok) {
@@ -416,6 +640,7 @@ bool disconnectSlot(QObject *source, int signalIndex, PyObject *callback)
         QObject::disconnect(connId);
         connectionHash.erase(it);
     }
+#endif // Py_GIL_DISABLED
     return ok;
 }
 

@@ -19,6 +19,10 @@
 #include <QtCore/qmetaobject.h>
 #include <QtCore/qstring.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 using namespace Shiboken;
 
 struct SlotData
@@ -71,7 +75,12 @@ static PyTypeObject *createSlotType()
 
 static PyTypeObject *PySideSlot_TypeF()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createSlotType);
+#else
     static auto *type = createSlotType();
+#endif
     return type;
 }
 
@@ -82,9 +91,14 @@ int slotTpInit(PyObject *self, PyObject *args, PyObject *kw)
     PyObject *argResult = nullptr;
     char *tag = nullptr;
 
+#ifdef Py_GIL_DISABLED
+    // Slot() constructors in several threads share one tuple
+    static PyObject *const emptyTuple = PyTuple_New(0);
+#else
     PyObject *& emptyTuple = PySide::globals()->emptyTuple;
     if (emptyTuple == nullptr)
         emptyTuple = PyTuple_New(0);
+#endif
 
     if (!PyArg_ParseTupleAndKeywords(emptyTuple, kw, "|sOs:QtCore.Slot",
                                      const_cast<char **>(kwlist),

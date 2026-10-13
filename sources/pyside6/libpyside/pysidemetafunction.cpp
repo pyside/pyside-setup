@@ -18,6 +18,10 @@
 #include <QtCore/qobject.h>
 #include <QtCore/qvarlengtharray.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 using namespace Qt::StringLiterals;
 
 extern "C"
@@ -56,7 +60,12 @@ static PyTypeObject *createMetaFunctionType()
 
 PyTypeObject *PySideMetaFunction_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createMetaFunctionType);
+#else
     static auto *type = createMetaFunctionType();
+#endif
     return type;
 }
 
@@ -190,7 +199,14 @@ bool call(QObject *self, int methodIndex, PyObject *args, PyObject **retVal)
     Py_END_ALLOW_THREADS
     if (retVal) {
         if (methArgs[0]) {
+#ifdef Py_GIL_DISABLED
+            static Shiboken::OnceValue<SbkConverter *> qVariantTypeConverterOnce;
+            SbkConverter *qVariantTypeConverter = qVariantTypeConverterOnce.get([] {
+                return Shiboken::Conversions::getConverter("QVariant");
+            });
+#else
             static SbkConverter *qVariantTypeConverter = Shiboken::Conversions::getConverter("QVariant");
+#endif
             Q_ASSERT(qVariantTypeConverter);
             *retVal = Shiboken::Conversions::copyToPython(qVariantTypeConverter, &methValues[0]);
         } else {

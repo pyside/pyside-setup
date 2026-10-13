@@ -22,6 +22,16 @@
 #include <sbkpydictrange.h>
 #include <sbkpytuplerange.h>
 #include <sbktypetupleref.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#  include "pyside_p.h"
+#  include <atomic>
+#  include <memory>
+#  include <vector>
+#  include <bindingmanager.h>
+#  include <sbkfailpoint.h>
+#  include <sbkftoptions.h>
+#endif
 #include <sbkstaticstrings.h>
 #include <sbkstring.h>
 #include <sbktypefactory.h>
@@ -41,6 +51,26 @@
 static constexpr char QT_SIGNAL_SENTINEL = '2';
 
 using namespace Qt::StringLiterals;
+
+#ifdef Py_GIL_DISABLED
+SignalNameOnce &SignalNameOnce::operator=(const QByteArray &name)
+{
+    using Shiboken::FreeThreading::Option;
+
+    if (name.isEmpty()) // Still to be named
+        return *this;
+    const bool once = Shiboken::FreeThreading::optionEnabled(Option::SignalNameOnce);
+    if (once)
+        PyMutex_Lock(&m_lock);
+    if (!once || !m_set.load(std::memory_order_relaxed)) {
+        m_name = name;
+        m_set.store(true, std::memory_order_release);
+    }
+    if (once)
+        PyMutex_Unlock(&m_lock);
+    return *this;
+}
+#endif // Py_GIL_DISABLED
 
 QDebug operator<<(QDebug debug, const PySideSignalData::Signature &s)
 {
@@ -82,6 +112,52 @@ QDebug operator<<(QDebug debug, const PySideSignalInstancePrivate &d)
     return debug;
 }
 
+#ifdef Py_GIL_DISABLED
+// A source handed over for deletion counts as dead, as it would with a GIL.
+static inline QObject *sender(const PySideSignalInstance *p)
+{
+    QObject *source = p->d != nullptr ? p->d->shared->source.data() : nullptr;
+    return source != nullptr && PySide::isDeletionPending(source) ? nullptr : source;
+}
+
+static bool isSourceDeleted(const PySideSignalInstance *p)
+{
+    return sender(p) == nullptr;
+}
+
+// The source of one signal operation. Its wrapper is held for the operation,
+// so another thread cannot drop the last reference and hand the source over
+// for deletion in between; a source without a wrapper is used as with a GIL.
+// Without SourceDeletionPending, each get() reads the source again.
+class SourceLease
+{
+public:
+    SourceLease(const SourceLease &) = delete;
+    SourceLease &operator=(const SourceLease &) = delete;
+
+    explicit SourceLease(const PySideSignalInstance *p) : m_signal(p)
+    {
+        if (!Shiboken::FreeThreading::optionEnabled(
+                Shiboken::FreeThreading::Option::SourceDeletionPending))
+            return;
+        m_leased = true;
+        QObject *source = p->d != nullptr ? p->d->shared->source.data() : nullptr;
+        if (source == nullptr)
+            return;
+        m_wrapper = Shiboken::BindingManager::instance().wrapperRef(source);
+        if (m_wrapper || !PySide::isDeletionPending(source))
+            m_source = source;
+    }
+
+    QObject *get() const { return m_leased ? m_source : sender(m_signal); }
+
+private:
+    const PySideSignalInstance *m_signal;
+    Shiboken::WrapperRef m_wrapper;
+    QObject *m_source = nullptr;
+    bool m_leased = false;
+};
+#else // Py_GIL_DISABLED
 static bool isSourceDeleted(const PySideSignalInstance *p)
 {
     return p->d == nullptr || p->d->shared->source.isNull();
@@ -91,6 +167,7 @@ static inline QObject *sender(const PySideSignalInstance *p)
 {
     return p->d != nullptr ? p->d->shared->source.data() : nullptr;
 }
+#endif // Py_GIL_DISABLED
 
 static inline QByteArray qSignalSignature(const PySideSignalInstance *p)
 {
@@ -135,7 +212,14 @@ static const char msgTargetSignalDeleted[] = "Target signal has been deleted";
 
 static SbkConverter *metaObjConnectionConverter()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<SbkConverter *> resultOnce;
+    SbkConverter *result = resultOnce.get([] {
+        return Shiboken::Conversions::getConverter("QMetaObject::Connection");
+    });
+#else
     static SbkConverter *result = Shiboken::Conversions::getConverter("QMetaObject::Connection");
+#endif
     Q_ASSERT(result);
     return result;
 }
@@ -206,7 +290,12 @@ static PyTypeObject *createMetaSignalType()
 
 static PyTypeObject *PySideMetaSignal_TypeF()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createMetaSignalType);
+#else
     static auto *type = createMetaSignalType();
+#endif
     return type;
 }
 
@@ -238,7 +327,12 @@ static PyTypeObject *createSignalType()
 
 PyTypeObject *PySideSignal_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createSignalType);
+#else
     static auto *type = createSignalType();
+#endif
     return type;
 }
 
@@ -288,7 +382,12 @@ static PyTypeObject *createSignalInstanceType()
 
 PyTypeObject *PySideSignalInstance_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createSignalInstanceType);
+#else
     static auto *type = createSignalInstanceType();
+#endif
     return type;
 }
 
@@ -550,15 +649,30 @@ static PyObject *connectSignalToSignal(PySideSignalInstance *source, PySideSigna
             const char *sourceSignature = sourceWalk->d->signature.constData();
             const char *targetSignature = targetWalk->d->signature.constData();
             if (QMetaObject::checkConnectArgs(sourceSignature, targetSignature)) {
+#ifdef Py_GIL_DISABLED
+                const SourceLease sourceLease(sourceWalk);
+                const SourceLease targetLease(targetWalk);
+                if (sourceLease.get() == nullptr)
+                    return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
+                if (targetLease.get() == nullptr)
+                    return PyErr_Format(PyExc_RuntimeError, msgTargetSignalDeleted);
+
+                auto *senderObj = sourceLease.get();
+#else
                 if (isSourceDeleted(sourceWalk))
                     return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
                 if (isSourceDeleted(targetWalk))
                     return PyErr_Format(PyExc_RuntimeError, msgTargetSignalDeleted);
 
                 auto *senderObj = sender(sourceWalk);
+#endif // Py_GIL_DISABLED
                 const auto *senderMo = senderObj->metaObject();
                 const int senderIndex = senderMo->indexOfSignal(sourceSignature);
+#ifdef Py_GIL_DISABLED
+                auto *receiver = targetLease.get();
+#else
                 auto *receiver = sender(targetWalk);
+#endif
                 const auto *receiverMo = receiver->metaObject();
                 const int receiverIndex = receiverMo->indexOfSignal(targetSignature);
                 if (senderIndex == -1 || receiverIndex == -1)
@@ -592,8 +706,15 @@ static PyObject *signalInstanceConnect(PyObject *self, PyObject *args, PyObject 
     // the requested connection type and fell back to Qt::AutoConnection.
     if (type != nullptr
         && qstrcmp(PepType_GetNameStr(Py_TYPE(type)), "ConnectionType") == 0) {
+#ifdef Py_GIL_DISABLED
+        static Shiboken::OnceValue<SbkConverter *> connectionTypeConvOnce;
+        SbkConverter *connectionTypeConv = connectionTypeConvOnce.get([] {
+            return Shiboken::Conversions::getConverter("Qt::ConnectionType");
+        });
+#else
         static SbkConverter *connectionTypeConv =
             Shiboken::Conversions::getConverter("Qt::ConnectionType");
+#endif
         Q_ASSERT(connectionTypeConv);
         Shiboken::Conversions::pythonToCppCopy(connectionTypeConv, type, &connectionType);
     }
@@ -609,12 +730,23 @@ static PyObject *signalInstanceConnect(PyObject *self, PyObject *args, PyObject 
         return PyErr_Format(PyExc_TypeError, "Expected signal or callable, got \"%s\"",
                             Py_TYPE(slot)->tp_name);
     }
+#ifdef Py_GIL_DISABLED
+    const SourceLease lease(source);
+    if (lease.get() == nullptr)
+        return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
+    Shiboken::failpoint("signal-op-after-check");
+    PySideSignalInstance *matchedSlot = findSignalInstanceForSlot(source, slot);
+    auto conn = PySide::qobjectConnectCallback(lease.get(),
+                                               qSignalSignature(matchedSlot).constData(),
+                                               slot, connectionType);
+#else
     if (isSourceDeleted(source))
         return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
     PySideSignalInstance *matchedSlot = findSignalInstanceForSlot(source, slot);
     auto conn = PySide::qobjectConnectCallback(sender(source),
                                                qSignalSignature(matchedSlot).constData(),
                                                slot, connectionType);
+#endif // Py_GIL_DISABLED
     return Shiboken::Conversions::copyToPython(metaObjConnectionConverter(), &conn);
 }
 
@@ -630,8 +762,15 @@ static PyObject *signalInstanceEmit(PyObject *self, PyObject *args)
     if (!source->d)
         return PyErr_Format(PyExc_RuntimeError, "cannot emit uninitialized SignalInstance");
 
+#ifdef Py_GIL_DISABLED
+    const SourceLease lease(source);
+    if (lease.get() == nullptr)
+        return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
+    Shiboken::failpoint("signal-emit-after-check");
+#else
     if (isSourceDeleted(source))
         return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
+#endif
 
     Shiboken::AutoDecRef pyArgs(PyList_New(0));
     const Py_ssize_t numArgsGiven = PySequence_Size(args);
@@ -657,7 +796,11 @@ static PyObject *signalInstanceEmit(PyObject *self, PyObject *args)
         }
     }
 
+#ifdef Py_GIL_DISABLED
+    const bool ok = PySide::SignalManager::emitSignal(lease.get(), source->d->signalIndex, args);
+#else
     const bool ok = PySide::SignalManager::emitSignal(sender(source), source->d->signalIndex, args);
+#endif
     if (PyErr_Occurred() != nullptr)
         return nullptr;
     if (ok)
@@ -724,6 +867,19 @@ static PyObject *signalInstanceDisconnect(PyObject *self, PyObject *args)
             Py_RETURN_FALSE;
         }
 
+#ifdef Py_GIL_DISABLED
+        const SourceLease sourceLease(source);
+        const SourceLease targetLease(target);
+        if (sourceLease.get() == nullptr)
+            return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
+        if (targetLease.get() == nullptr)
+            return PyErr_Format(PyExc_RuntimeError, msgTargetSignalDeleted);
+
+        auto *qSender = sourceLease.get();
+        const bool ok = qSender->disconnect(qSignalSignature(source).constData(),
+                                            targetLease.get(),
+                                            qSignalSignature(target).constData());
+#else
         if (isSourceDeleted(source))
             return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
         if (isSourceDeleted(target))
@@ -733,6 +889,7 @@ static PyObject *signalInstanceDisconnect(PyObject *self, PyObject *args)
         const bool ok = qSender->disconnect(qSignalSignature(source).constData(),
                                             sender(target),
                                             qSignalSignature(target).constData());
+#endif // Py_GIL_DISABLED
         if (ok)
             Py_RETURN_TRUE;
         warnDisconnectFailed(slot, source->d->signature);
@@ -740,10 +897,18 @@ static PyObject *signalInstanceDisconnect(PyObject *self, PyObject *args)
     }
 
     if (slot == Py_None) { // disconnect all signal receivers by signature
+#ifdef Py_GIL_DISABLED
+        const SourceLease lease(source);
+        if (lease.get() == nullptr)
+            return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
+        Shiboken::failpoint("signal-op-after-check");
+        const bool ok = lease.get()->disconnect(qSignalSignature(source).constData());
+#else
         if (isSourceDeleted(source))
             return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
         const bool ok =
             source->d->shared->source->disconnect(qSignalSignature(source).constData());
+#endif
         if (ok)
             Py_RETURN_TRUE;
         warnDisconnectFailed(slot, source->d->signature);
@@ -768,12 +933,23 @@ static PyObject *signalInstanceDisconnect(PyObject *self, PyObject *args)
 
     // try the matching signature, fall back to first
     auto *matchedSlot = slot != Py_None ? findSignalInstanceForSlot(source, slot) : source;
+#ifdef Py_GIL_DISABLED
+    const SourceLease lease(matchedSlot);
+    if (lease.get() == nullptr)
+        return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
+    Shiboken::failpoint("signal-op-after-check");
+#else
     if (isSourceDeleted(matchedSlot))
         return PyErr_Format(PyExc_RuntimeError, msgSourceDeleted);
+#endif
 
     const auto sourceSignature = qSignalSignature(matchedSlot);
     // disconnect all, so we need to use the c++ signature disconnect(qobj, signal, 0, 0)
+#ifdef Py_GIL_DISABLED
+    auto *qSender = lease.get();
+#else
     auto *qSender = sender(matchedSlot);
+#endif
     if (slot == Py_None) {
         const bool ok = qSender->disconnect(sourceSignature.constData(), nullptr, nullptr);
         if (ok)
@@ -815,6 +991,25 @@ static PyObject *signalDescrGet(PyObject *self, PyObject *obj, PyObject * /*type
     // PYSIDE-68-bis: It is important to respect the already cached instance.
     Shiboken::AutoDecRef name(Py_BuildValue("s", signal->data->signalName.data()));
     auto *dict = SbkObject_GetDict_NoRef(obj);
+#ifdef Py_GIL_DISABLED
+    // First binds in several threads: the lookup owns what it finds, the first
+    // stored wins.
+    PyObject *inst{};
+    if (PyDict_GetItemRef(dict, name, &inst) != 0)
+        return inst;
+    inst = reinterpret_cast<PyObject *>(PySide::Signal::initialize(signal, name, obj));
+    Shiboken::failpoint("signal-instance-before-store");
+    if (inst == nullptr
+        || !Shiboken::FreeThreading::optionEnabled(
+               Shiboken::FreeThreading::Option::SignalInstancePublishOnce)) {
+        PyObject_SetAttr(obj, name, inst);
+        return inst;
+    }
+    PyObject *stored{};
+    PyDict_SetDefaultRef(dict, name, inst, &stored);
+    Py_DECREF(inst);
+    return stored;
+#else // Py_GIL_DISABLED
     auto *inst = PyDict_GetItem(dict, name);
     if (inst) {
         Py_INCREF(inst);
@@ -823,6 +1018,7 @@ static PyObject *signalDescrGet(PyObject *self, PyObject *obj, PyObject * /*type
     inst = reinterpret_cast<PyObject *>(PySide::Signal::initialize(signal, name, obj));
     PyObject_SetAttr(obj, name, inst);
     return inst;
+#endif // Py_GIL_DISABLED
 }
 
 static PyObject *signalCall(PyObject *self, PyObject *args, PyObject *kw)
@@ -852,8 +1048,13 @@ static PyObject *signalCall(PyObject *self, PyObject *args, PyObject *kw)
 // This function returns a borrowed reference.
 static inline PyObject *_getRealCallable(PyObject *func)
 {
+#ifdef Py_GIL_DISABLED
+    const auto *SignalType = PySideSignal_TypeF();
+    const auto *SignalInstanceType = PySideSignalInstance_TypeF();
+#else
     static const auto *SignalType = PySideSignal_TypeF();
     static const auto *SignalInstanceType = PySideSignalInstance_TypeF();
+#endif
 
     // If it is a signal, use the (maybe empty) homonymous method.
     if (Py_TYPE(func) == SignalType) {
@@ -980,6 +1181,165 @@ bool checkInstanceType(PyObject *pyObj)
         && PyType_IsSubtype(Py_TYPE(pyObj), PySideSignalInstance_TypeF()) != 0;
 }
 
+#ifdef Py_GIL_DISABLED
+
+} // namespace PySide::Signal
+
+namespace PySide {
+
+// The signals of a class and its bases, in mro order, made while no class in the mro was
+// written. Never changed once published. A replaced list stays until the class dies, since
+// another thread may be walking it; a class that keeps changing stops getting new ones.
+struct SignalClassList
+{
+    static constexpr int maxReplaced = 32;
+
+    // No reference to the base: one would keep it past the gc pass that collects the class.
+    // A class dies only through gc (it is in its own mro), and free-threaded gc finds its
+    // garbage while the other threads wait at a safe point, never inside current().
+    struct Base
+    {
+        const Shiboken::ObjectType::ClassState *state;
+        unsigned int generation;
+    };
+
+    ~SignalClassList()
+    {
+        for (auto *object : namesAndSignals)
+            Py_DECREF(object);
+    }
+
+    // No class in the mro was written since the list was made, and none is written now.
+    // Every base but object has a write state (SignalClassListOwnBases). A write that drops
+    // a base from the mro is counted on the class or on a base before it, and the check
+    // stops there.
+    bool current() const
+    {
+        for (const auto &base : bases) {
+            unsigned int generation{};
+            if (base.state != nullptr
+                && (!base.state->stable(&generation) || generation != base.generation)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    std::vector<Base> bases; // One per class of the mro, the class first
+    int replaced;
+    const SignalClassList *older;
+    std::vector<PyObject *> namesAndSignals; // Owned, name and signal alternate
+};
+
+TypeUserData::~TypeUserData()
+{
+    const auto *list = signalList.load(std::memory_order_relaxed);
+    while (list != nullptr) {
+        const auto *older = list->older;
+        delete list;
+        list = older;
+    }
+}
+
+} // namespace PySide
+
+namespace PySide::Signal {
+
+static const SignalClassList *newSignalClassList(PyTypeObject *type, TypeUserData *userData,
+                                                 const SignalClassList *head)
+{
+    using Shiboken::FreeThreading::Option;
+    using Shiboken::FreeThreading::optionEnabled;
+
+    auto list = std::make_unique<SignalClassList>();
+    list->replaced = head != nullptr ? head->replaced + 1 : 0;
+    list->older = head;
+
+    // The generation of a class is taken before its dict is read: a write after that
+    // changes it, and the list is not used then.
+    const bool early = optionEnabled(Option::SignalClassListOrder);
+    PepMroRef mroRef(type);
+    for (PyTypeObject *base : mroRef) {
+        const auto *state = Shiboken::ObjectType::classState(base);
+        if (state == nullptr && base != &PyBaseObject_Type
+            && optionEnabled(Option::SignalClassListOwnBases)) {
+            return nullptr; // A write to that base is not counted.
+        }
+        unsigned int generation{};
+        if (state != nullptr && early && !state->stable(&generation))
+            return nullptr;
+        list->bases.push_back({state, generation});
+
+        Shiboken::AutoDecRef tpDict(PepType_GetDict(base));
+        Shiboken::AutoDecRef snapshot(PepDict_IterationSnapshot(tpDict.object()));
+        if (snapshot.isNull()) {
+            PyErr_Clear();
+            return nullptr;
+        }
+        for (auto [key, value] : Shiboken::PyDictRange(snapshot.object())) {
+            if (PyObject_TypeCheck(value, PySideSignal_TypeF())) {
+                list->namesAndSignals.push_back(Py_NewRef(key));
+                list->namesAndSignals.push_back(Py_NewRef(value));
+            }
+        }
+    }
+    Shiboken::failpoint("signal-list-after-walk");
+    if (!early) {
+        // Taken after the walk: a write during the walk is not seen.
+        for (auto &base : list->bases) {
+            if (base.state != nullptr && !base.state->stable(&base.generation))
+                return nullptr;
+        }
+    }
+
+    if (!list->current())
+        return nullptr; // A write during the walk; the caller walks again.
+    const SignalClassList *expected = head;
+    if (!userData->signalList.compare_exchange_strong(expected, list.get(),
+                                                      std::memory_order_release,
+                                                      std::memory_order_relaxed)) {
+        return nullptr; // Another thread was first.
+    }
+    return list.release();
+}
+
+// The current list of a class, or nullptr: the caller walks the mro then.
+static const SignalClassList *signalClassList(PyTypeObject *type)
+{
+    using Shiboken::FreeThreading::Option;
+    using Shiboken::FreeThreading::optionEnabled;
+
+    if (!optionEnabled(Option::SignalClassList))
+        return nullptr;
+    auto *userData = retrieveTypeUserData(type);
+    if (userData == nullptr)
+        return nullptr;
+    const auto *head = userData->signalList.load(std::memory_order_acquire);
+    if (head != nullptr) {
+        if (!optionEnabled(Option::SignalClassListCheck) || head->current())
+            return head;
+        if (head->replaced >= SignalClassList::maxReplaced)
+            return nullptr;
+    }
+    return newSignalClassList(type, userData, head);
+}
+
+// Adds an instance of a signal found in the class's list, like the loop below.
+static bool addSignalInstance(PyObject *source, PyObject *dict, PyObject *key, PyObject *value)
+{
+    if (PyDict_GetItem(dict, key) != nullptr)
+        return true;
+    auto *inst = PyObject_New(PySideSignalInstance, PySideSignalInstance_TypeF());
+    Shiboken::AutoDecRef signalInstance(reinterpret_cast<PyObject *>(inst));
+    auto shared = std::make_shared<PySideSignalInstanceShared>();
+    shared->source = PySide::convertToQObject(source, false);
+    shared->sourceType = Py_TYPE(source);
+    instanceInitialize(inst, key, reinterpret_cast<PySideSignal *>(value), shared, 0);
+    return PyDict_SetItem(dict, key, signalInstance) != -1;
+}
+
+#endif // Py_GIL_DISABLED
+
 void updateSourceObject(PyObject *source)
 {
     // TODO: Provide for actual upstream exception handling.
@@ -987,6 +1347,18 @@ void updateSourceObject(PyObject *source)
 
     if (source == nullptr)      // Bad input
        return;
+
+#ifdef Py_GIL_DISABLED
+    if (const auto *list = signalClassList(Py_TYPE(source))) {
+        auto *instanceDict = SbkObject_GetDict_NoRef(source);
+        const auto &items = list->namesAndSignals;
+        for (std::size_t i = 0; i < items.size(); i += 2) {
+            if (!addSignalInstance(source, instanceDict, items[i], items[i + 1]))
+                return;
+        }
+        return;
+    }
+#endif
 
     PepMroRef mroRef(Py_TYPE(source));
     Shiboken::AutoDecRef mroIterator(PyObject_GetIter(mroRef.object()));
@@ -1247,6 +1619,9 @@ PySideSignalInstance *newObjectFromMethod(QObject *sourceQObject, PyObject *sour
 
 static void _addSignalToWrapper(PyTypeObject *wrapperType, const char *signalName, PySideSignal *signal)
 {
+#ifdef Py_GIL_DISABLED
+    Shiboken::ObjectType::ClassWrite write(wrapperType);
+#endif
     Shiboken::AutoDecRef tpDict(PepType_GetDict(wrapperType));
     auto *typeDict = tpDict.object();
     if (auto *homonymousMethod = PyDict_GetItemString(typeDict, signalName)) {

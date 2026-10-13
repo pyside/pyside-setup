@@ -145,8 +145,10 @@ def _run_without(cleared: list[str], test: str) -> tuple[int, str]:
     return rc, out
 
 
-def _verdict(out: str) -> str:
+def _verdict(out: str, rc: int = 0) -> str:
     """The last line carrying FAIL or "skipped:", from that mark on."""
+    if rc == HANG_RC:
+        return f"timeout after {CHILD_TIMEOUT} s"
     lines = out.strip().splitlines()
     for line in reversed(lines):
         for mark in ("FAIL", "skipped:"):
@@ -173,13 +175,15 @@ def defect_shown(expect: str | set[str], rc: int, out: str) -> bool:
 
 
 def counterproof(option: str, test: str, expect: str | set[str],
-                 context: str = "", gil_expect: str = "") -> str:
+                 context: str = "", gil_expect: str = "", attempts: int = 1) -> str:
     """The test passes with `option` and fails on its defect without it.
 
     `expect` names the defect, or a set of the forms it takes (see
     defect_shown()), `gil_expect` the defect as it shows with the GIL
     enabled, where that differs. `context` names a bit cleared in both
-    runs, for measures that hide each other.
+    runs, for measures that hide each other. `attempts` is how often the
+    run without `option` may pass before that counts, for a defect that
+    needs a race to show; only a failure on the defect proves anything.
     """
     if not FREE_THREADED:
         return "skipped: the option bits exist only in a free-threaded build"
@@ -191,8 +195,12 @@ def counterproof(option: str, test: str, expect: str | set[str],
         return f"skipped: {test} did not run ({_verdict(out)[:60]})"
     if rc != 0:
         where = f" without {context}" if context else ""
-        return f"FAIL: {test} does not pass{where}: {_verdict(out)[:60]}"
+        return f"FAIL: {test} does not pass{where}: {_verdict(out, rc)[:60]}"
     rc, out = _run_without(cleared + [option], test)
+    for _ in range(attempts - 1):
+        if rc != 0:
+            break
+        rc, out = _run_without(cleared + [option], test)
     without = option + (f" (and {context})" if context else "")
     if rc == SKIP:
         return f"skipped: {test} did not run ({_verdict(out)[:60]})"
@@ -204,7 +212,7 @@ def counterproof(option: str, test: str, expect: str | set[str],
     shown = expect if isinstance(expect, str) else " or ".join(sorted(expect))
     if not defect_shown(expect, rc, out):
         return (f"FAIL: {test} fails without {without}, but not on {shown!r}: "
-                f"rc {rc}, {_verdict(out)[:60]}")
+                f"rc {rc}, {_verdict(out, rc)[:60]}")
     return f"ok ({test} shows {shown!r} without {without})"
 
 

@@ -16,7 +16,7 @@ import re
 import subprocess
 import sys
 
-from fpharness import (BUILD, FREE_THREADED, REPO, Shiboken, Test, counterproof,
+from fpharness import (BUILD, FREE_THREADED, OPTIONS, REPO, Shiboken, Test, counterproof,
                        defect_shown, gil_enabled, main)
 
 
@@ -194,6 +194,11 @@ def test_dict_snapshot() -> str:
     return run_type_state("testDictChangedDuringConversion")
 
 
+def test_signal_name_once() -> str:
+    """The first instances of a class name its late signals once."""
+    return run_type_state("testFirstInstancesNameLateSignals")
+
+
 def test_dict_metaobject_build() -> str:
     """A mixin changed while a subclass parses its dict."""
     return run_type_state("testBaseClassChangedDuringMetaObjectBuild")
@@ -202,6 +207,96 @@ def test_dict_metaobject_build() -> str:
 def test_dict_qobject_init() -> str:
     """A class changed while an instance looks for signals."""
     return run_type_state("testClassChangedDuringQObjectInit")
+
+
+def run_new_instance(method: str) -> str:
+    """One method of SignalsOfNewInstanceTest."""
+    return run_unittest(TESTS_DIR / "pysidetest" / "type_state_freethreading_test.py",
+                        f"SignalsOfNewInstanceTest.{method}")
+
+
+def test_signal_list_class() -> str:
+    """A new QObject sees a signal added to and removed from its class."""
+    return run_new_instance("testSignalAddedToClass")
+
+
+def test_signal_list_base() -> str:
+    """A new QObject sees a signal added to a base."""
+    return run_new_instance("testSignalAddedToBase")
+
+
+def test_signal_list_mixin() -> str:
+    """A new QObject sees a signal added to a mixin of another metatype."""
+    return run_new_instance("testSignalAddedToMixin")
+
+
+def test_signal_list_walk_write() -> str:
+    """A write while a list is made: the next instance sees it."""
+    return run_new_instance("testClassWrittenDuringListWalk")
+
+
+def test_signal_list_bases() -> str:
+    """A new QObject follows a __bases__ assignment."""
+    return run_new_instance("testBasesAssigned")
+
+
+def test_signal_list_versions() -> str:
+    """A class changed more often than CPython gives it tags keeps its signals."""
+    return run_new_instance("testClassChangedOftenerThanItHasVersions")
+
+
+def test_signal_list_threads() -> str:
+    """Threads construct objects while one changes the class."""
+    return run_new_instance("testClassChangedWhileConstructing")
+
+
+def test_signal_list_no_version() -> str:
+    """Tags used up before the first construction: every signal is seen."""
+    return run_new_instance("testNoVersionAtFirstConstruction")
+
+
+def test_signal_list_versions_out() -> str:
+    """Tags used up after the list was made: a later signal is seen."""
+    return run_new_instance("testVersionsRunOutAfterFirstConstruction")
+
+
+def test_signal_list_last_write() -> str:
+    """After writers and constructors, a new instance has the last signal."""
+    return run_new_instance("testLastWriteSeen")
+
+
+def test_signal_list_write_waits() -> str:
+    """A construction during a class write waits for the write."""
+    return run_new_instance("testConstructionWaitsForClassWrite")
+
+
+def test_signal_list_write_detached() -> str:
+    """The write's locks freed in between: without the write count the test above sees
+    the stale list, with it the construction does not take a list."""
+    if not FREE_THREADED:
+        return "skipped: the class's list exists only in a free-threaded build"
+    before = os.environ.get("PYSIDE6_OPTION_FT")
+    os.environ["SIGNAL_LIST_DETACH_IN_WRITE"] = "1"
+    try:
+        counted = run_new_instance("testConstructionWaitsForClassWrite")
+        os.environ["PYSIDE6_OPTION_FT"] = f"~{OPTIONS['ClassWriteCount']:#x}"
+        uncounted = run_new_instance("testConstructionWaitsForClassWrite")
+    finally:
+        del os.environ["SIGNAL_LIST_DETACH_IN_WRITE"]
+        if before is None:
+            os.environ.pop("PYSIDE6_OPTION_FT", None)
+        else:
+            os.environ["PYSIDE6_OPTION_FT"] = before
+    if "misses the written signal" not in uncounted:
+        return f"FAIL: without the write count the stale list did not show: {uncounted}"
+    if counted != "ok":
+        return f"FAIL: with the write count: {counted}"
+    return "ok (a blocked write: the stale list shows without the count, not with it)"
+
+
+def test_signal_list_released() -> str:
+    """A dead class holds on to none of its signals."""
+    return run_new_instance("testSignalsReleasedWithTheClass")
 
 
 def test_dict_enum_shortcut() -> str:
@@ -319,6 +414,105 @@ def test_bases_snapshot() -> str:
     return run_type_state("testBasesWalkSurvivesBasesSwap")
 
 
+def run_signal_slot(method: str) -> str:
+    """One method of pysidetest/signal_slot_freethreading_test.py."""
+    return run_unittest(TESTS_DIR / "pysidetest" / "signal_slot_freethreading_test.py",
+                        f"SignalSlotFreeThreadedTest.{method}")
+
+
+def test_builder_lock() -> str:
+    """Dynamic signals added from two threads: none is lost."""
+    return run_signal_slot("testDynamicMethodsFromTwoThreads")
+
+
+def test_instance_builder() -> str:
+    """First dynamic signals of an object share one meta object."""
+    return run_signal_slot("testFirstDynamicMethodFromTwoThreads")
+
+
+def test_connection_hash() -> str:
+    """Connect and disconnect from threads keeps the hash intact."""
+    return run_signal_slot("testConnectionsFromThreads")
+
+
+def test_first_use_stop() -> str:
+    """A stop-the-world while a second thread waits for a first use."""
+    return run_signal_slot("testFirstUseDuringStopTheWorld")
+
+
+def test_receiver_upgrade() -> str:
+    """A delivery binds only a receiver it holds."""
+    return run_signal_slot("testReceiverDropsMidDelivery")
+
+
+def test_weakrefless_receiver() -> str:
+    """A receiver without weak references stays alive."""
+    return run_signal_slot("testReceiverWithoutWeakref")
+
+
+def test_same_dynamic_method() -> str:
+    """One dynamic signal added from two threads exists once."""
+    return run_signal_slot("testSameDynamicMethodFromTwoThreads")
+
+
+def test_decorated_class() -> str:
+    """A subclass made during the first read shares the meta object."""
+    if gil_enabled():
+        return ("skipped: the failpoint parks inside a raw lock, which must not "
+                "detach; with the GIL enabled the second thread cannot run")
+    return run_signal_slot("testDecoratedClassFromTwoThreads")
+
+
+def test_repeated_receiver() -> str:
+    """Both connections of a method go with its receiver."""
+    return run_signal_slot("testRepeatedConnectionsGoWithReceiver")
+
+
+def test_repeated_disconnect() -> str:
+    """A method connected twice is disconnected twice."""
+    return run_signal_slot("testRepeatedConnectionsDisconnect")
+
+
+def test_source_ops() -> str:
+    """A source dropped during a connect or disconnect in another thread lasts it."""
+    return run_signal_slot("testSourceDroppedDuringOperation")
+
+
+def test_main_queued_source() -> str:
+    """A widget queued for deletion in the main thread counts as deleted."""
+    return run_signal_slot("testMainQueuedSourceCountsAsDeleted")
+
+
+def test_source_lease() -> str:
+    """A source dropped during an emit in another thread lasts the emit."""
+    return run_signal_slot("testSourceDroppedDuringEmit")
+
+
+def test_dropped_source() -> str:
+    """A source dropped in another thread counts as deleted."""
+    return run_signal_slot("testSourceDroppedInAnotherThread")
+
+
+def test_signature_warning() -> str:
+    """A signature warning hook waiting for a thread does not hang."""
+    return run_signal_slot("testSignatureWarningHookWaits")
+
+
+def test_lookup_key() -> str:
+    """A dict key's __eq__ waiting for a thread does not hang."""
+    return run_signal_slot("testLookupKeyWaits")
+
+
+def test_sender_tracker() -> str:
+    """The process's first connections in two threads make one tracker."""
+    return run_signal_slot("testFirstConnectsFromTwoThreads")
+
+
+def test_signal_instance() -> str:
+    """First binding of a signal in two threads gives one instance."""
+    return run_signal_slot("testFirstSignalAccessFromTwoThreads")
+
+
 def test_one_wrapper_per_address() -> str:
     """Two threads converting one C++ object get one wrapper."""
     if gil_enabled():
@@ -396,12 +590,53 @@ TESTS = {
     # The freed list crashes, or is read as a shorter one: an IndexError
     "proof-dict-snapshot": Test(lambda: counterproof(
         "DictIterationSnapshot", "dict-snapshot", {"crashed", "IndexError"})),
+    "signal-name-once": Test(test_signal_name_once),
+    # Mostly a crash; a name read while it is written fails the comparison. A race, so it
+    # can pass by luck: 2 of 330 runs without the bit did.
+    "proof-signal-name-once": Test(lambda: counterproof(
+        "SignalNameOnce", "signal-name-once", {"crash", "crashed", "!= 'late_signal_"},
+        attempts=3)),
     "dict-metaobject-build": Test(test_dict_metaobject_build),
     "proof-dict-metaobject-build": Test(lambda: counterproof(
         "DictIterationSnapshot", "dict-metaobject-build", {"crash", "crashed"})),
     "dict-qobject-init": Test(test_dict_qobject_init),
+    # The class's list hides the copy from all but the first objects
     "proof-dict-qobject-init": Test(lambda: counterproof(
-        "DictIterationSnapshot", "dict-qobject-init", {"crash", "crashed"})),
+        "DictIterationSnapshot", "dict-qobject-init", {"crash", "crashed"},
+        context="SignalClassList")),
+    "signal-list-class": Test(test_signal_list_class),
+    "proof-signal-list-class": Test(lambda: counterproof(
+        "SignalClassListCheck", "signal-list-class", "new instance")),
+    "signal-list-base": Test(test_signal_list_base),
+    "proof-signal-list-base": Test(lambda: counterproof(
+        "SignalClassListCheck", "signal-list-base", "misses a signal of its base")),
+    "proof-signal-list-class-write": Test(lambda: counterproof(
+        "ClassWriteCount", "signal-list-class", "misses a signal of its class")),
+    "signal-list-mixin": Test(test_signal_list_mixin),
+    "proof-signal-list-mixin": Test(lambda: counterproof(
+        "SignalClassListOwnBases", "signal-list-mixin", "misses a signal of its mixin")),
+    "signal-list-walk-write": Test(test_signal_list_walk_write),
+    "proof-signal-list-walk-write": Test(lambda: counterproof(
+        "SignalClassListOrder", "signal-list-walk-write", "written during the walk")),
+    "signal-list-bases": Test(test_signal_list_bases),
+    "proof-signal-list-bases": Test(lambda: counterproof(
+        "SignalClassListCheck", "signal-list-bases", "new base")),
+    "signal-list-versions": Test(test_signal_list_versions),
+    "proof-signal-list-versions": Test(lambda: counterproof(
+        "SignalClassListCheck", "signal-list-versions", "new instance")),
+    "signal-list-threads": Test(test_signal_list_threads),
+    "proof-signal-list-threads": Test(lambda: counterproof(
+        "SignalClassListCheck", "signal-list-threads", "misses a signal of its class")),
+    "signal-list-no-version": Test(test_signal_list_no_version),
+    "signal-list-versions-out": Test(test_signal_list_versions_out),
+    "proof-signal-list-versions-out": Test(lambda: counterproof(
+        "SignalClassListCheck", "signal-list-versions-out", "misses a signal of its class")),
+    "signal-list-last-write": Test(test_signal_list_last_write),
+    "proof-signal-list-last-write": Test(lambda: counterproof(
+        "SignalClassListCheck", "signal-list-last-write", "misses the last written signal")),
+    "signal-list-write-waits": Test(test_signal_list_write_waits),
+    "signal-list-write-detached": Test(test_signal_list_write_detached),
+    "signal-list-released": Test(test_signal_list_released),
     "dict-enum-shortcut": Test(test_dict_enum_shortcut),
     "proof-dict-enum-shortcut": Test(lambda: counterproof(
         "DictIterationSnapshot", "dict-enum-shortcut", {"crash", "crashed"})),
@@ -425,6 +660,10 @@ TESTS = {
     "proof-module-dir": Test(lambda: counterproof(
         "ModuleDirDefault", "module-dir", "dir() met a module before its tables")),
     "import-waits": Test(test_import_waits),
+    "first-use-stop": Test(test_first_use_stop),
+    "proof-first-use-stop": Test(lambda: counterproof(
+        "StaticInitDetached", "first-use-stop",
+        {"hang", "a stop-the-world waited for a first use"})),
     "two-bindings": Test(test_two_bindings),
     "proof-two-bindings": Test(lambda: counterproof(
         "FirstUseOnce", "two-bindings", "two first imports hung")),
@@ -465,6 +704,66 @@ TESTS = {
     "bases-snapshot": Test(test_bases_snapshot),
     "proof-bases-snapshot": Test(lambda: counterproof(
         "MroSnapshot", "bases-snapshot", "the walk left the bases it started on")),
+    "builder-lock": Test(test_builder_lock),
+    "proof-builder-lock": Test(lambda: counterproof(
+        "MetaObjectBuilderLock", "builder-lock", "a dynamic method was lost")),
+    "instance-builder": Test(test_instance_builder),
+    "proof-instance-builder": Test(lambda: counterproof(
+        "InstanceBuilderPublishOnce", "instance-builder",
+        "the object got two meta-object builders")),
+    "connection-hash": Test(test_connection_hash),
+    "proof-connection-hash": Test(lambda: counterproof(
+        "ConnectionHashLock", "connection-hash", "the connection hash broke")),
+    "receiver-upgrade": Test(test_receiver_upgrade),
+    "proof-receiver-upgrade": Test(lambda: counterproof(
+        "MethodReceiverUpgrade", "receiver-upgrade",
+        "the delivery bound a receiver it did not hold")),
+    "weakrefless-receiver": Test(test_weakrefless_receiver),
+    "proof-weakrefless-receiver": Test(lambda: counterproof(
+        "MethodReceiverUpgrade", "weakrefless-receiver", "the connection outlived its receiver")),
+    "same-dynamic-method": Test(test_same_dynamic_method),
+    "proof-same-dynamic-method": Test(lambda: counterproof(
+        "DynamicMethodOnce", "same-dynamic-method", "one dynamic signal was added twice")),
+    "decorated-class": Test(test_decorated_class),
+    "proof-decorated-class": Test(lambda: counterproof(
+        "TypeBuilderLock", "decorated-class", "one class got two meta objects")),
+    "source-ops": Test(test_source_ops),
+    "proof-source-ops": Test(lambda: counterproof(
+        "SourceDeletionPending", "source-ops", "a signal operation used a dropped source")),
+    "main-queued-source": Test(test_main_queued_source),
+    "proof-main-queued-source": Test(lambda: counterproof(
+        "SourceDeletionPending", "main-queued-source",
+        "a signal used a source queued for the main thread")),
+    "source-lease": Test(test_source_lease),
+    "proof-source-lease": Test(lambda: counterproof(
+        "SourceDeletionPending", "source-lease", "crashed")),
+    "dropped-source": Test(test_dropped_source),
+    "proof-dropped-source": Test(lambda: counterproof(
+        "SourceDeletionPending", "dropped-source", "a signal used a dropped source")),
+    "signature-warning": Test(test_signature_warning),
+    # With the GIL on, the hook under the lock needs the GIL a waiter holds: a hang
+    "proof-signature-warning": Test(lambda: counterproof(
+        "BuilderWarningUnlocked", "signature-warning",
+        "a warning hook waited for the builder lock", gil_expect="hang")),
+    "lookup-key": Test(test_lookup_key),
+    # With the GIL on, the key under the lock needs the GIL a waiter holds: a hang
+    "proof-lookup-key": Test(lambda: counterproof(
+        "BuilderLookupUnlocked", "lookup-key",
+        "a dictionary key waited for the builder lock", gil_expect="hang")),
+    "repeated-receiver": Test(test_repeated_receiver),
+    "proof-repeated-receiver": Test(lambda: counterproof(
+        "RepeatedConnections", "repeated-receiver",
+        "a repeated connection outlived its receiver")),
+    "repeated-disconnect": Test(test_repeated_disconnect),
+    "proof-repeated-disconnect": Test(lambda: counterproof(
+        "RepeatedConnections", "repeated-disconnect",
+        "a repeated connection could not be disconnected")),
+    "sender-tracker": Test(test_sender_tracker),
+    "proof-sender-tracker": Test(lambda: counterproof(
+        "SenderTrackerOnce", "sender-tracker", "two sender trackers")),
+    "signal-instance": Test(test_signal_instance),
+    "proof-signal-instance": Test(lambda: counterproof(
+        "SignalInstancePublishOnce", "signal-instance", "two SignalInstances for one signal")),
 }
 
 

@@ -10,6 +10,7 @@
 #include "sbkdestructorentry.h"
 #ifdef Py_GIL_DISABLED
 #  include "shibokenclasshelpermacros.h"
+#  include <atomic>
 #endif
 
 #include <vector>
@@ -209,6 +210,10 @@ using DeleteInOwnerThreadHook = void (*)(SbkObject *sbkObj, DestructorEntry &ent
 
 LIBSHIBOKEN_API void setDeleteInOwnerThread(DeleteInOwnerThreadHook func);
 
+using DeletionQueuedHook = void (*)(SbkObject *sbkObj, const DestructorEntry &entry);
+
+LIBSHIBOKEN_API void setDeletionQueued(DeletionQueuedHook func);
+
 // A private copy of a list, dict or set argument, made before the overload is
 // chosen or when read from the keywords, held until the function returns.
 class LIBSHIBOKEN_API ContainerArgumentCopy
@@ -331,6 +336,47 @@ LIBSHIBOKEN_API PyTypeObject *introduceWrapperType(PyObject *enclosingObject,
     created, args and kwds. The last two are the same as passed to tp_new.
 */
 LIBSHIBOKEN_API void setSubTypeInitHook(PyTypeObject *type, SubTypeInitHook func);
+
+#ifdef Py_GIL_DISABLED
+// The writes to the dict or the bases of a class: those under way and those done.
+// Zeroed with the class. A construction during a write sees writers and walks the dicts
+// instead of taking a list made before the write.
+struct ClassState
+{
+    std::atomic<unsigned int> writers;
+    std::atomic<unsigned int> generation;
+
+    // The generation, if no write is under way.
+    bool stable(unsigned int *result) const
+    {
+        if (writers.load() != 0)
+            return false;
+        *result = generation.load();
+        return true;
+    }
+};
+
+/*!
+    Returns the write state of \a type, nullptr for a class whose metatype is not
+    Shiboken.ObjectType: its writes are not seen.
+*/
+LIBSHIBOKEN_API const ClassState *classState(PyTypeObject *type);
+
+// Marks a write to the dict or the bases of a class for its lifetime. Used by the
+// setattro of Shiboken.ObjectType that libpyside installs (SbkObjectType_meta_setattro),
+// type_set_doc(), introduceWrapperType() and _addSignalToWrapper().
+class LIBSHIBOKEN_API ClassWrite
+{
+public:
+    LIBSHIBOKEN_DISABLE_COPY_MOVE(ClassWrite)
+
+    explicit ClassWrite(PyTypeObject *type);
+    ~ClassWrite();
+
+private:
+    ClassState *m_state = nullptr;
+};
+#endif // Py_GIL_DISABLED
 
 /*!
     Returns the user data of \a type previously set by

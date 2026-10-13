@@ -171,6 +171,22 @@ void setDeleteInOwnerThread(DeleteInOwnerThreadHook func)
     DeleteInOwnerThread = func;
 }
 
+static DeletionQueuedHook DeletionQueued = nullptr;
+
+/*!
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    Sets \a func, which the deallocation of an owning wrapper in another
+    thread than the main one offers each destructor entry it queues for the
+    main thread, before the main thread can see it. libpyside marks such a
+    QObject as pending deletion.
+*/
+void setDeletionQueued(DeletionQueuedHook func)
+{
+    DeletionQueued = func;
+}
+
 /*!
     \class Shiboken::ContainerArgumentCopy
     \ingroup freethreading
@@ -339,6 +355,9 @@ type_set_doc(PyObject *obType, PyObject *value, void * /* context */)
     auto *type = reinterpret_cast<PyTypeObject *>(obType);
     if (!check_set_special_type_attr(type, value, "__doc__"))
         return -1;
+#ifdef Py_GIL_DISABLED
+    Shiboken::ObjectType::ClassWrite write(type);
+#endif
     PyType_Modified(type);
     Shiboken::AutoDecRef tpDict(PepType_GetDict(type));
     return PyDict_SetItem(tpDict.object(), Shiboken::PyMagicName::doc(), value);
@@ -670,6 +689,17 @@ static void SbkDeallocWrapperCommon(PyObject *pyObj, bool canDelete)
     // If I have ownership and is valid delete C++ pointer
     auto *sotp = PepType_SOTP(pyType);
     canDelete &= sbkObj->d->hasOwnership && sbkObj->d->validCppObject;
+#ifdef Py_GIL_DISABLED
+    // Reported before the main thread can delete the entries queued below
+    if (canDelete && sotp->delete_in_main_thread && Shiboken::DeletionQueued != nullptr
+        && Shiboken::currentThreadId() != Shiboken::mainThreadId()) {
+        const auto entries = sotp->is_multicpp
+            ? Shiboken::getDestructorEntries(sbkObj)
+            : Shiboken::DestructorEntries{{sotp->cpp_dtor, Shiboken::cppPointer(sbkObj->d)}};
+        for (const auto &e : entries)
+            Shiboken::DeletionQueued(sbkObj, e);
+    }
+#endif
     if (canDelete) {
         if (sotp->delete_in_main_thread && Shiboken::currentThreadId() != Shiboken::mainThreadId()) {
             if (sotp->is_multicpp) {
@@ -1528,6 +1558,36 @@ bool isUserType(PyTypeObject *type)
     return checkType(type) && PepType_SOTP(type)->is_user_type;
 }
 
+#ifdef Py_GIL_DISABLED
+const ClassState *classState(PyTypeObject *type)
+{
+    auto *obType = reinterpret_cast<PyObject *>(type);
+    if (PyObject_TypeCheck(obType, SbkObjectType_TypeF()) == 0)
+        return nullptr;
+    return &PepType_SOTP(type)->classState;
+}
+
+// A write runs writers++, the write, generation++, writers--: whoever finds no write
+// under way and the same generation before and after reading has read no torn state.
+ClassWrite::ClassWrite(PyTypeObject *type)
+{
+    using FreeThreading::Option;
+    if (!FreeThreading::optionEnabled(Option::ClassWriteCount))
+        return;
+    m_state = const_cast<ClassState *>(classState(type));
+    if (m_state != nullptr)
+        m_state->writers.fetch_add(1);
+}
+
+ClassWrite::~ClassWrite()
+{
+    if (m_state != nullptr) {
+        m_state->generation.fetch_add(1);
+        m_state->writers.fetch_sub(1);
+    }
+}
+#endif // Py_GIL_DISABLED
+
 /*!
     Returns true if the constructor of \a ctorType can be called for an instance
     of type \a myType.
@@ -1703,6 +1763,9 @@ introduceWrapperType(PyObject *enclosingObject,
         // PYSIDE-2230: Instead of tp_dict, use the enclosing type.
         //              This stays interface compatible.
         if (PyType_Check(enclosingObject)) {
+#ifdef Py_GIL_DISABLED
+            ClassWrite write(reinterpret_cast<PyTypeObject *>(enclosingObject));
+#endif
             AutoDecRef tpDict(PepType_GetDict(reinterpret_cast<PyTypeObject *>(enclosingObject)));
             return PyDict_SetItemString(tpDict, typeName, ob_type) == 0 ? type : nullptr;
         }

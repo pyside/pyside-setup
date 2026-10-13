@@ -28,16 +28,20 @@ namespace Shiboken
 enum class RawLock : std::uint16_t
 {
     ClassHierarchy   = 1U << 0,
-    WrapperMap       = 1U << 1,
-    MainThreadDelete = 1U << 2,
+    MetaObject       = 1U << 1,
+    ConnectionHash   = 1U << 2,
+    WrapperMap       = 1U << 3,
+    MainThreadDelete = 1U << 4,
     // The leaves: nothing may be taken while one of them is held.
-    State            = 1U << 3,
-    PostRoutine      = 1U << 4,
-    QObjectMetaType  = 1U << 5,
-    ConverterRegistry = 1U << 6,
-    ModuleRegistry   = 1U << 7,
-    EnumPrivate      = 1U << 8,
-    GenericEnumRegistry = 1U << 9,
+    State            = 1U << 5,
+    PostRoutine      = 1U << 6,
+    QObjectMetaType  = 1U << 7,
+    ConverterRegistry = 1U << 8,
+    ModuleRegistry   = 1U << 9,
+    EnumPrivate      = 1U << 10,
+    GenericEnumRegistry = 1U << 11,
+    SenderTracker    = 1U << 12,
+    PendingDeletion  = 1U << 13,
 };
 
 #ifndef NDEBUG

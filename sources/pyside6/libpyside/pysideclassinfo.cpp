@@ -14,6 +14,7 @@
 #include <sbktypefactory.h>
 #include <sbkstring.h>
 #ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
 #  include <sbkpep.h> // PepDict_IterationSnapshot()
 #endif
 
@@ -36,7 +37,12 @@ static PyTypeObject *createClassInfoType()
 
 PyTypeObject *PySideClassInfo_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createClassInfoType);
+#else
     static auto *type = createClassInfoType();
+#endif
     return type;
 }
 

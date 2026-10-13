@@ -11,8 +11,16 @@
 
 #include <dynamicqmetaobject.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <atomic>
+#endif
+
 namespace PySide
 {
+
+#ifdef Py_GIL_DISABLED
+struct SignalClassList;
+#endif
 
 // Struct associated with QObject's via Shiboken::Object::getTypeUserData()
 struct TypeUserData
@@ -25,6 +33,12 @@ struct TypeUserData
 
     MetaObjectBuilder mo;
     std::size_t cppObjSize;
+#ifdef Py_GIL_DISABLED
+    ~TypeUserData();
+
+    // The newest list; see updateSourceObject()
+    std::atomic<const SignalClassList *> signalList{nullptr};
+#endif
 };
 
 PYSIDE_API TypeUserData *retrieveTypeUserData(PyTypeObject *pyTypeObj);
@@ -32,6 +46,9 @@ PYSIDE_API TypeUserData *retrieveTypeUserData(PyObject *pyObj);
 // For QML
 PYSIDE_API const QMetaObject *retrieveMetaObject(PyTypeObject *pyTypeObj);
 PYSIDE_API const QMetaObject *retrieveMetaObject(PyObject *pyObj);
+#ifdef Py_GIL_DISABLED
+PYSIDE_API bool isDeletionPending(const QObject *qobject);
+#endif
 
 } //namespace PySide
 

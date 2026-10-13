@@ -42,7 +42,8 @@ PYSIDE_API void initDynamicMetaObject(PyTypeObject *type, const QMetaObject *bas
                                       std::size_t cppObjSize);
 /*!
     Initializes a Python-derived \a type created with the
-    arguments \a args and \a kwds.
+    arguments \a args and \a kwds. On free-threaded builds, it may wait
+    for the lock of the meta-object builders, attached.
 */
 PYSIDE_API void initQObjectSubType(PyTypeObject *type, PyObject *args, PyObject *kwds);
 

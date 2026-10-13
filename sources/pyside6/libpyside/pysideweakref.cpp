@@ -7,6 +7,10 @@
 #include <basewrapper.h>
 #include <sbktypefactory.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 struct PySideCallableObject {
     PyObject_HEAD
     /* Type-specific fields go here. */
@@ -38,7 +42,12 @@ static PyTypeObject *createCallableObjectType()
 
 static PyTypeObject *PySideCallableObject_TypeF()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createCallableObjectType);
+#else
     static auto *type = createCallableObjectType();
+#endif
     return type;
 }
 

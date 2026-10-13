@@ -177,6 +177,9 @@ struct SbkObjectTypePrivate
     /// Tells is the type is a value type or an object-type, see BEHAVIOUR_ *constants.
     unsigned int type_behaviour : 2;
     unsigned int delete_in_main_thread : 1;
+#ifdef Py_GIL_DISABLED
+    Shiboken::ObjectType::ClassState classState;
+#endif
 };
 
 #ifdef Py_GIL_DISABLED

@@ -29,6 +29,11 @@
 #include <sbkstring.h>
 #include <sbkstaticstrings.h>
 #include <sbkerrors.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkfailpoint.h>
+#  include <sbkftoptions.h>
+#  include <sbkheldlocks.h>
+#endif
 
 #include <QtCore/qbytearrayview.h>
 #include <QtCore/qcoreapplication.h>
@@ -38,6 +43,9 @@
 #include <QtCore/qmetatype.h>
 
 #include <climits>
+#ifdef Py_GIL_DISABLED
+#  include <mutex>
+#endif
 #include <optional>
 #include <utility>
 
@@ -49,7 +57,11 @@ using namespace Qt::StringLiterals;
 
 PyObject *metaObjectAttr()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString s("__METAOBJECT__");
+#else
     static PyObject *const s = Shiboken::String::createStaticString("__METAOBJECT__");
+#endif
     return s;
 }
 
@@ -628,6 +640,78 @@ QDebug operator<<(QDebug debug, const slotSignature &sig)
     return debug;
 }
 
+#ifdef Py_GIL_DISABLED
+static std::recursive_mutex &metaObjectBuilderMutex()
+{
+    static std::recursive_mutex mutex;
+    return mutex;
+}
+
+// Serializes writing and building one MetaObjectBuilder. Recursive: with
+// BuilderWarningUnlocked cleared, a warning may run Python asking for the
+// meta object again. Otherwise no Python runs under it, and Qt reaches it
+// under its own mutex through metaObject(): waiters stay attached.
+class MetaObjectBuilderLock
+{
+public:
+    Q_DISABLE_COPY_MOVE(MetaObjectBuilderLock)
+
+    MetaObjectBuilderLock()
+        : m_locked(Shiboken::FreeThreading::optionEnabled(
+                       Shiboken::FreeThreading::Option::MetaObjectBuilderLock))
+    {
+        if (!m_locked)
+            return;
+        Shiboken::checkLockRank(Shiboken::RawLock::MetaObject);
+        metaObjectBuilderMutex().lock();
+        Shiboken::noteLockAcquired(Shiboken::RawLock::MetaObject);
+    }
+
+    ~MetaObjectBuilderLock()
+    {
+        if (!m_locked)
+            return;
+        Shiboken::noteLockReleased(Shiboken::RawLock::MetaObject);
+        metaObjectBuilderMutex().unlock();
+    }
+
+private:
+    const bool m_locked;
+};
+
+// Building parses the Python type, which runs Python: two threads may build
+// one each, the first stored wins.
+static PySide::MetaObjectBuilder *instanceBuilder(PyObject *pySelf,
+                                                  const QMetaObject *metaObject)
+{
+    auto *dict = SbkObject_GetDict_NoRef(pySelf);
+    if (auto *dmo = metaBuilderFromDict(dict))
+        return dmo;
+    auto *candidate = new PySide::MetaObjectBuilder(Py_TYPE(pySelf), metaObject);
+    PyObject *pyDmo = PyCapsule_New(candidate, nullptr, destroyMetaObject);
+    if (pyDmo == nullptr) {
+        delete candidate;
+        return nullptr;
+    }
+    Shiboken::failpoint("metaobject-before-commit");
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::InstanceBuilderPublishOnce)) {
+        PyObject_SetAttr(pySelf, metaObjectAttr(), pyDmo);
+        Py_DECREF(pyDmo);
+        return candidate;
+    }
+    PyObject *published{};
+    const int rc = PyDict_SetDefaultRef(dict, metaObjectAttr(), pyDmo, &published);
+    Py_DECREF(pyDmo);
+    if (rc < 0)
+        return nullptr;
+    auto *winner = reinterpret_cast<PySide::MetaObjectBuilder *>(
+        PyCapsule_GetPointer(published, nullptr));
+    Py_DECREF(published);
+    return winner;
+}
+#endif // Py_GIL_DISABLED
+
 static int addMetaMethod(QObject *source, const QByteArray &signature,
                          QMetaMethod::MethodType type)
 {
@@ -646,6 +730,11 @@ static int addMetaMethod(QObject *source, const QByteArray &signature,
     }
 
     auto *pySelf = reinterpret_cast<PyObject *>(self);
+#ifdef Py_GIL_DISABLED
+    PySide::MetaObjectBuilder *dmo = instanceBuilder(pySelf, metaObject);
+    if (dmo == nullptr)
+        return -1;
+#else
     auto *dict = SbkObject_GetDict_NoRef(pySelf);
     PySide::MetaObjectBuilder *dmo = metaBuilderFromDict(dict);
     // Create a instance meta object
@@ -655,6 +744,7 @@ static int addMetaMethod(QObject *source, const QByteArray &signature,
         PyObject_SetAttr(pySelf, metaObjectAttr(), pyDmo);
         Py_DECREF(pyDmo);
     }
+#endif // Py_GIL_DISABLED
 
     if (type == QMetaMethod::Slot) {
         qCWarning(lcPySide).noquote().nospace()
@@ -663,6 +753,26 @@ static int addMetaMethod(QObject *source, const QByteArray &signature,
             << ". Consider annotating with " << slotSignature(signature);
     }
 
+#ifdef Py_GIL_DISABLED
+    // The warning runs Python, which may wait for a thread that needs the lock.
+    if (Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::BuilderWarningUnlocked)
+        && !PySide::checkMethodSignature(signature)) {
+        return -1;
+    }
+    Shiboken::failpoint("method-before-add");
+    MetaObjectBuilderLock builderLock;
+    // Another thread may have added it meanwhile; a builder finds a signal or
+    // slot only when asked for that kind.
+    if (Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::DynamicMethodOnce)) {
+        for (auto kind : {QMetaMethod::Signal, QMetaMethod::Slot}) {
+            const int existing = dmo->indexOfMethod(kind, signature);
+            if (existing != -1)
+                return existing;
+        }
+    }
+#endif // Py_GIL_DISABLED
     return type == QMetaMethod::Signal ? dmo->addSignal(signature) : dmo->addSlot(signature);
 }
 
@@ -721,6 +831,10 @@ const QMetaObject *retrieveMetaObject(const QObject *cppSelf)
 #endif // Py_GIL_DISABLED
 }
 
+/*!
+    Returns the meta object of the Python object \a self. On free-threaded
+    builds, it may wait for the builder lock, attached.
+*/
 const QMetaObject *retrieveMetaObject(PyObject *self)
 {
 #ifdef Py_GIL_DISABLED
@@ -728,6 +842,12 @@ const QMetaObject *retrieveMetaObject(PyObject *self)
     //              to hold the GIL. Maybe that is harmless here (check later).
     // Thanks to Sam Gross who fixed most errors by pointing this out.
     Shiboken::GilState gil;
+    // The lookup can run a key's __eq__, which may wait for a thread needing
+    // the lock: it goes first, unlocked.
+    std::optional<MetaObjectBuilderLock> builderLock;
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::BuilderLookupUnlocked))
+        builderLock.emplace();
 #endif
     // PYSIDE-803: Avoid the GIL in SignalManager::retrieveMetaObject
     // This function had the GIL. We do not use the GIL unless we have to.
@@ -744,7 +864,24 @@ const QMetaObject *retrieveMetaObject(PyObject *self)
     if (!builder)
         builder = &(retrieveTypeUserData(self)->mo);
 
+#ifdef Py_GIL_DISABLED
+    // update() runs no Python and issues no Qt message: nothing under the lock
+    // can wait for another thread.
+    if (!builderLock)
+        builderLock.emplace();
+#endif
     return builder->update();
 }
+
+#ifdef Py_GIL_DISABLED
+// Shared by instances and subtypes; one decorated later is rebuilt by update().
+const QMetaObject *updateTypeMetaObject(MetaObjectBuilder &builder)
+{
+    if (!Shiboken::FreeThreading::optionEnabled(Shiboken::FreeThreading::Option::TypeBuilderLock))
+        return builder.update();
+    MetaObjectBuilderLock builderLock;
+    return builder.update();
+}
+#endif
 
 } // namespace PySide::SignalManager
