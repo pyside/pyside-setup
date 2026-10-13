@@ -335,6 +335,11 @@ macro(create_pyside_module)
         --module-uses-gil=auto
         --api-version=${SUPPORTED_QT_VERSION})
 
+    # Free-threaded builds only.
+    if(SHIBOKEN_PYTHON_FREE_THREADED)
+        list(APPEND shiboken_command "--keywords=py_gil_disabled")
+    endif()
+
     if(qt_dir_after_includes)
         make_path(shiboken_dir_after_include_dirs ${qt_dir_after_includes})
         list(APPEND shiboken_command

@@ -18,6 +18,14 @@ enum class Option : std::uint64_t
 {
     OwnerThreadDeletion = 0x1,
     FinishedOwnerCleanup = 0x2,
+    StateLock = 0x4,
+    DictPublishOnce = 0x8,
+    OwnedWrapperLookup = 0x10,
+    OneWrapperPerAddress = 0x20,
+    ConstructorInstallOnce = 0x40,
+    ClassAssignCheck = 0x80,
+    InvalidateRootsOwned = 0x100,
+    ContainerArgumentCopy = 0x200,
 };
 
 LIBSHIBOKEN_API bool optionEnabled(Option opt);

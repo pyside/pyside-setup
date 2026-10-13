@@ -155,3 +155,8 @@ PYSIDE_TEST(qmessage_logger_test.py)
 if(X11)
     PYSIDE_TEST(qhandle_test.py)
 endif()
+
+# Free-threaded builds only
+if(SHIBOKEN_PYTHON_FREE_THREADED)
+    PYSIDE_TEST(qobject_property_lifetime_test.py)
+endif()

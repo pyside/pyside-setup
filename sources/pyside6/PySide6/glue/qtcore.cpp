@@ -623,6 +623,19 @@ pyResult = %PYSELF;
 qRegisterMetaType<QList<int> >("QList<int>");
 // @snippet qabstractitemmodel
 
+#ifdef Py_GIL_DISABLED
+// @snippet qobject-setproperty
+// %FUNCTION_NAME() - disable generation of function call.
+// PYSIDE-3467: the variant only points to the wrapper, keep the value alive.
+// Kept first: the property change event of the store can set another value.
+const QByteArray refKey = QByteArrayLiteral("__property_") + %1;
+Shiboken::Object::keepReference(reinterpret_cast<SbkObject *>(%PYSELF),
+                                refKey.constData(), %PYARG_2);
+%RETURN_TYPE %0 = %CPPSELF.%FUNCTION_NAME(%1, %2);
+%PYARG_0 = %CONVERTTOPYTHON[%RETURN_TYPE](%0);
+// @snippet qobject-setproperty
+#endif
+
 // @snippet qobject-metaobject
 %RETURN_TYPE %0 = %CPPSELF.%FUNCTION_NAME();
 %PYARG_0 = %CONVERTTOPYTHON[%RETURN_TYPE](%0);
@@ -1177,6 +1190,25 @@ if (!PyTuple_SetItem(empty, 0, PyList_New(0))) {
 // @snippet qcoreapplication-2
 
 // @snippet qcoreapplication-instance
+#ifdef Py_GIL_DISABLED
+// the lookup takes the reference the result needs
+PyObject *pyApp = nullptr;
+if (qApp) {
+    if (auto wrapper = Shiboken::BindingManager::instance().wrapperRef(qApp)) {
+        pyApp = reinterpret_cast<PyObject *>(wrapper.release());
+    } else {
+        pyApp = %CONVERTTOPYTHON[QCoreApplication *](qApp);
+        // this will keep app live after python exit (extra ref)
+        Py_XINCREF(pyApp);
+    }
+} else {
+    pyApp = Py_NewRef(Py_None);
+}
+// PYSIDE-571: make sure that we return the singleton "None"
+if (Py_TYPE(pyApp) == Py_TYPE(Py_None))
+    Py_DECREF(MakeQAppWrapper(nullptr));
+%PYARG_0 = pyApp;
+#else // Py_GIL_DISABLED
 PyObject *pyApp = Py_None;
 if (qApp) {
     pyApp = reinterpret_cast<PyObject *>(
@@ -1190,6 +1222,7 @@ if (Py_TYPE(pyApp) == Py_TYPE(Py_None))
     Py_DECREF(MakeQAppWrapper(nullptr));
 %PYARG_0 = pyApp;
 Py_XINCREF(%PYARG_0);
+#endif // Py_GIL_DISABLED
 // @snippet qcoreapplication-instance
 
 // @snippet qdatastream-readrawdata

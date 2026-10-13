@@ -3,6 +3,7 @@
 
 import os
 import sys
+import sysconfig
 import unittest
 
 from pathlib import Path
@@ -23,6 +24,11 @@ class HeuristicsTest(UsesQApplication):
         TestWidget(parent)
         child = parent.heuristicChildWidget()
         parent2 = child.heuristicParentWidget()
+        if sysconfig.get_config_var("Py_GIL_DISABLED"):
+            # dumpTree() is refused in free-threaded builds; dump() shows the parent
+            self.assertIn("parent....", shiboken6.dump(child))
+            self.assertNotIn("parent....", shiboken6.dump(parent2))
+            return
         # dumpTree() crashes when encountering a cycle
         self.assertTrue(shiboken6.dumpTree(parent2))
 

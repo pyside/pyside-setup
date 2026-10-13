@@ -1901,6 +1901,11 @@
       </modify-argument>
       <modify-argument index="1" pyi-type="Optional[PySide6.QtCore.QObject]"/>
     </modify-function>
+    <?if py_gil_disabled?>
+    <modify-function signature="setProperty(const char*,QVariant)">
+      <inject-code class="target" position="beginning" file="../glue/qtcore.cpp" snippet="qobject-setproperty"/>
+    </modify-function>
+    <?endif?>
     <!-- Manual overload order fixes PYSIDE-2627
 
          The addition of the qobject-connect-4-context overload resulted in an

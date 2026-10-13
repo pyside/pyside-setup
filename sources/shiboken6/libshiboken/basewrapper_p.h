@@ -8,6 +8,9 @@
 #include "sbkpython.h"
 #include "shibokenclasshelpermacros.h"
 #include "basewrapper.h"
+#ifdef Py_GIL_DISABLED
+#  include "sbkrelaxedflag.h"
+#endif
 
 #include <unordered_map>
 #include <set>
@@ -72,6 +75,14 @@ struct SbkObjectPrivate
 
     SbkObjectPrivate() noexcept = default;
 
+#ifdef Py_GIL_DISABLED
+    // One memory location each, for writers without the state lock.
+    Shiboken::RelaxedFlag hasOwnership;
+    Shiboken::RelaxedFlag containsCppWrapper;
+    Shiboken::RelaxedFlag validCppObject;
+    Shiboken::RelaxedFlag cppObjectCreated;
+    Shiboken::RelaxedFlag isQAppSingleton;
+#else
     /// True when Python is responsible for freeing the used memory.
     unsigned int hasOwnership : 1;
     /// This is true when the C++ class of the wrapped object has a virtual destructor AND was created by Python.
@@ -83,6 +94,7 @@ struct SbkObjectPrivate
     /// PYSIDE-1470: Marked as true if this is the Q*Application singleton.
     /// This bit allows app deletion from shiboken?.delete() .
     unsigned int isQAppSingleton : 1;
+#endif // Py_GIL_DISABLED
     /// Mirrored from SbkObjectTypePrivate; True for a Python class which inherits from several
     /// C++ classes.
     unsigned int is_multicpp : 1;

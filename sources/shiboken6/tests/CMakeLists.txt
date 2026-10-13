@@ -96,7 +96,7 @@ endforeach()
 
 # Free-threaded builds only; not *_test.py, so the glob above skips them.
 if(SHIBOKEN_PYTHON_FREE_THREADED)
-    foreach(ft_test samplebinding/refcount_freethreading)
+    foreach(ft_test samplebinding/refcount_freethreading samplebinding/wrapper_freethreading)
         string(REPLACE "binding/" "_" ft_name ${ft_test})
         add_test(${ft_name} ${Python_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/${ft_test}.py")
         set_tests_properties(${ft_name} PROPERTIES ENVIRONMENT "BUILD_DIR=${BUILD_DIR}"

@@ -90,20 +90,21 @@ TextStream &operator<<(TextStream &str, const sbkUnusedVariableCast &c)
     return str;
 }
 
-struct retrieveWrapper
+// The lookup of a WrapperRef; free-threaded it needs an attached thread
+struct wrapperRef
 {
-    explicit retrieveWrapper(const AbstractMetaClassCPtr &klass,
-                             QAnyStringView instanceName = "this")
+    explicit wrapperRef(const AbstractMetaClassCPtr &klass,
+                        QAnyStringView instanceName = "this")
         : m_klass(klass), m_instanceName(instanceName) {}
 
     const AbstractMetaClassCPtr m_klass;
     const QAnyStringView m_instanceName;
 };
 
-TextStream &operator<<(TextStream &str, const retrieveWrapper &rw)
+TextStream &operator<<(TextStream &str, const wrapperRef &aw)
 {
-    str << "Shiboken::BindingManager::instance().retrieveWrapper(" << rw.m_instanceName
-        << ", " << CppGenerator::cpythonTypeName(rw.m_klass) << ')';
+    str << "Shiboken::BindingManager::instance().wrapperRef(" << aw.m_instanceName
+        << ", " << CppGenerator::cpythonTypeName(aw.m_klass) << ')';
     return str;
 }
 
@@ -1067,9 +1068,16 @@ void CppGenerator::writeDestructorNative(TextStream &s,
         }
     }
 
-    // kill pyobject
-    s << "auto *wrapper = " << retrieveWrapper(classContext.metaClass())
-      << ";\nShiboken::Object::destroy(wrapper, this);\n" << outdent << "}\n";
+    // kill pyobject. Free-threaded: ask the map before taking a thread state,
+    // most instances never had a wrapper.
+    s << "#ifdef Py_GIL_DISABLED\n"
+         "if (!Shiboken::BindingManager::instance().hasWrapper(this))\n"
+      << indent << "return;\n" << outdent
+      << "Shiboken::GilState gil;\n"
+         "#endif\n"
+         "auto wrapper = " << wrapperRef(classContext.metaClass())
+      << ";\nShiboken::Object::destroy(wrapper.object(), this);\n"
+      << outdent << "}\n";
 }
 
 // Return type for error messages when getting invalid types from virtual
@@ -1488,7 +1496,8 @@ void CppGenerator::writeVirtualMethodPythonOverride(TextStream &s,
 
     if (!snips.isEmpty()) {
         if (func->injectedCodeUsesPySelf())
-            s << "PyObject *pySelf = " << retrieveWrapper(func->ownerClass()) << ";\n";
+            s << "auto pySelfRef = " << wrapperRef(func->ownerClass()) << ";\n"
+                 "PyObject *pySelf = pySelfRef.pyObject();\n";
 
         const AbstractMetaArgument *lastArg = func->arguments().isEmpty()
                                             ? nullptr : &func->arguments().constLast();
@@ -1705,11 +1714,9 @@ void CppGenerator::writeMetaCast(TextStream &s,
     const QString qualifiedCppName = classContext.metaClass()->qualifiedCppName();
     s << "void *" << wrapperClassName << "::qt_metacast(const char *_clname)\n{\n"
         << indent << "if (_clname == nullptr)\n" << indent << "return {};\n" << outdent
-        << "if (SbkObject *pySelf = Shiboken::BindingManager::instance().retrieveWrapper(this)) {\n" << indent
-        << "auto *obSelf = reinterpret_cast<PyObject *>(pySelf);\n"
-        << "if (PySide::inherits(Py_TYPE(obSelf), _clname))\n"
+        << "if (PySide::wrapperInherits(this, _clname))\n"
         << indent << "return static_cast<void *>(const_cast< "
-        << wrapperClassName << " *>(this));\n" << outdent << outdent << "}\n"
+        << wrapperClassName << " *>(this));\n" << outdent
         << "return " << qualifiedCppName << "::qt_metacast(_clname);\n"
         << outdent << "}\n\n";
 }
@@ -1827,10 +1834,8 @@ void CppGenerator::writePointerToPythonConverter(TextStream &c,
                                                  const QString &cpythonType)
 {
     const auto &metaClass = context.metaClass();
-    c << "auto *pyOut = reinterpret_cast<PyObject *>(" << retrieveWrapper(metaClass, "cppIn") << ");\n"
-        << "if (pyOut) {\n" << indent
-        << "Py_INCREF(pyOut);\nreturn pyOut;\n" << outdent
-        << "}\n";
+    c << "if (auto wrapper = " << wrapperRef(metaClass, "cppIn") << ")\n" << indent
+        << "return wrapper.newRef();\n" << outdent;
 
     QString instanceCast = "auto *tCppIn = reinterpret_cast<const "_L1 + getFullTypeName(context)
                            + " *>(cppIn);\n"_L1;
@@ -2328,6 +2333,68 @@ void CppGenerator::writeCommonMethodWrapperPreamble(TextStream &s,
             writeArgumentsInitializer(s, overloadData, context, errorReturn);
         }
     }
+    writeContainerArgumentCopies(s, overloadData);
+}
+
+static void collectContainerArgumentPositions(const OverloadDataRootNode *node,
+                                              QSet<int> *positions)
+{
+    for (const auto &child : node->children()) {
+        const bool typeReplacedByPyObject = child->isTypeModified()
+            && child->modifiedArgType().name() == cPyObjectT;
+        if (!typeReplacedByPyObject && !child->argType().isVarargs()
+            && child->argType().isContainer()) {
+            positions->insert(child->argPos());
+        }
+        collectContainerArgumentPositions(child.get(), positions);
+    }
+}
+
+// Free-threaded: private copies of container arguments (ContainerArgumentCopy)
+void CppGenerator::writeContainerArgumentCopies(TextStream &s,
+                                                const OverloadData &overloadData)
+{
+    QSet<int> positionSet;
+    collectContainerArgumentPositions(&overloadData, &positionSet);
+    if (positionSet.isEmpty())
+        return;
+    QList<int> positions(positionSet.cbegin(), positionSet.cend());
+    std::sort(positions.begin(), positions.end());
+    const bool usePyArgs = overloadData.pythonFunctionWrapperUsesListOfArguments();
+    s << "#ifdef Py_GIL_DISABLED\n";
+    for (int pos : positions) {
+        s << "Shiboken::ContainerArgumentCopy containerArgumentCopy" << pos << '('
+            << (usePyArgs ? pythonArgsAt(pos) : QString(PYTHON_ARG)) << ");\n";
+    }
+    s << "#endif\n";
+}
+
+// A keyword container is copied right after the keywords are parsed, before
+// its type check.
+void CppGenerator::writeContainerKeywordArgumentCopies(TextStream &s,
+                                                       const AbstractMetaFunctionCPtr &func,
+                                                       const OverloadData &overloadData,
+                                                       const AbstractMetaArgumentList &args)
+{
+    QSet<int> positionSet;
+    collectContainerArgumentPositions(&overloadData, &positionSet);
+    QList<int> positions;
+    for (const auto &arg : args) {
+        const int pyArgIndex = arg.argumentIndex()
+                - OverloadData::numberOfRemovedArguments(func, arg.argumentIndex());
+        if (positionSet.contains(pyArgIndex) && arg.type().isContainer()
+            && arg.modifiedType().name() != cPyObjectT) {
+            positions.append(pyArgIndex);
+        }
+    }
+    if (positions.isEmpty())
+        return;
+    s << "\n#ifdef Py_GIL_DISABLED";
+    for (int pos : positions) {
+        s << "\n|| !containerArgumentCopy" << pos << ".copyKeywordArgument("
+            << pythonArgsAt(pos) << ')';
+    }
+    s << "\n#endif";
 }
 
 // Non-constructible classes
@@ -2438,6 +2505,15 @@ void CppGenerator::writeConstructorWrapper(TextStream &s, const OverloadData &ov
     writeConstructorWrapperPreamble(s, overloadData, namedArgumentFlags,
                                     classContext, errorReturn);
 
+    const QString typeName = classContext.forSmartPointer()
+        ? classContext.preciseType().cppSignature() : metaClass->qualifiedCppName();
+    // A second __init__ is refused before anything is built or any Python __init__ runs
+    s << "#ifdef Py_GIL_DISABLED\n"
+        << "Shiboken::Object::CppPointerClaim cppPointerClaim(sbkSelf, Shiboken::SbkType< "
+        << globalScopePrefix(classContext) << typeName << " >());\n"
+        << "if (!cppPointerClaim)\n" << indent << errorReturn << outdent
+        << "#endif\n";
+
     s << '\n';
 
     if (overloadData.maxArgs() > 0)
@@ -2463,8 +2539,6 @@ void CppGenerator::writeConstructorWrapper(TextStream &s, const OverloadData &ov
     writeFunctionCalls(s, overloadData, namedArgumentFlags, classContext, errorReturn);
     s << '\n';
 
-    const QString typeName = classContext.forSmartPointer()
-        ? classContext.preciseType().cppSignature() : metaClass->qualifiedCppName();
     s << "if (" << shibokenErrorsOccurred
         << " || !Shiboken::Object::setCppPointer(sbkSelf, Shiboken::SbkType< "
         << globalScopePrefix(classContext) << typeName << " >(), cptr)) {\n"
@@ -3521,9 +3595,12 @@ void CppGenerator::writeSingleFunctionCall(TextStream &s,
     const bool hasArguments = !func->arguments().isEmpty();
     if (hasArguments) // Argument conversion error?
         s << "if (Shiboken::Errors::occurred() == nullptr) {\n" << indent;
+    QSet<int> containerArgumentPositions;
+    collectContainerArgumentPositions(&overloadData, &containerArgumentPositions);
     writeMethodCall(s, func, context,
                     overloadData.pythonFunctionWrapperUsesListOfArguments(),
-                    func->arguments().size() - numRemovedArgs, indirections, errorReturn);
+                    func->arguments().size() - numRemovedArgs, indirections,
+                    containerArgumentPositions, errorReturn);
 
     if (!func->isConstructor())
         writeNoneReturn(s, func, overloadData.hasNonVoidReturnType());
@@ -3931,6 +4008,7 @@ void CppGenerator::writeNamedArgumentResolution(TextStream &s,
         ? "parseConstructorKeywordArguments" : "parseKeywordArguments";
     s << "if (!Shiboken::" << mappingFunc << "(kwds, mapping, "
         << count << ", errInfo, " << PYTHON_ARGS << ')' << indent;
+    writeContainerKeywordArgumentCopies(s, func, overloadData, args);
     for (qsizetype i = 0; i < count; ++i) {
         const auto &arg = args.at(i);
         const int pyArgIndex = arg.argumentIndex()
@@ -4035,6 +4113,7 @@ void CppGenerator::writeMethodCall(TextStream &s, const AbstractMetaFunctionCPtr
                                    const GeneratorContext &context, bool usesPyArgs,
                                    int maxArgs,
                                    const QList<qsizetype> &argumentIndirections,
+                                   const QSet<int> &containerArgumentPositions,
                                    ErrorReturn errorReturn) const
 {
     s << "// " << func->signatureComment() << '\n';
@@ -4438,19 +4517,32 @@ void CppGenerator::writeMethodCall(TextStream &s, const AbstractMetaFunctionCPtr
             const QString pyArgName = refCount.action == ReferenceCount::Remove
                 ? u"Py_None"_s : argumentNameFromIndex(api(), func, argIndex);
 
-            if (refCount.action == ReferenceCount::Add || refCount.action == ReferenceCount::Set)
-                s << "Shiboken::Object::keepReference(";
-            else
-                s << "Shiboken::Object::removeReference(";
-
-            s << "reinterpret_cast<SbkObject *>(self), \"";
             QString varName = arg_mod.referenceCounts().constFirst().varName;
             if (varName.isEmpty())
                 varName = func->minimalSignature() + QString::number(argIndex);
+            auto writeReference = [&](const QString &pyArg) {
+                if (refCount.action == ReferenceCount::Add || refCount.action == ReferenceCount::Set)
+                    s << "Shiboken::Object::keepReference(";
+                else
+                    s << "Shiboken::Object::removeReference(";
 
-            s << varName << "\", " << pyArgName
-              << (refCount.action == ReferenceCount::Add ? ", true" : "")
-              << ");\n";
+                s << "reinterpret_cast<SbkObject *>(self), \"";
+                s << varName << "\", " << pyArg
+                  << (refCount.action == ReferenceCount::Add ? ", true" : "")
+                  << ");\n";
+            };
+            // C++ keeps the caller's object, as with a GIL, not the copy
+            if (refCount.action != ReferenceCount::Remove && argIndex > 0
+                && containerArgumentPositions.contains(argIndex - 1)) {
+                s << "#ifdef Py_GIL_DISABLED\n";
+                writeReference(u"containerArgumentCopy"_s + QString::number(argIndex - 1)
+                               + u".original("_s + pyArgName + u')');
+                s << "#else\n";
+                writeReference(pyArgName);
+                s << "#endif\n";
+            } else {
+                writeReference(pyArgName);
+            }
 
             if (argIndex == 0)
                 hasReturnPolicy = true;
@@ -5227,10 +5319,10 @@ void CppGenerator::writeGetterFunction(TextStream &s,
         // "foo.list_of_structs[2].field".
         s << "PyObject *pyOut = {};\n"
             << "auto *fieldTypeObject = " << cpythonTypeNameExt(fieldType) << ";\n"
-            << "if (auto *sbkOut = Shiboken::BindingManager::instance().retrieveWrapper("
+            << "if (auto sbkOut = Shiboken::BindingManager::instance().wrapperRef("
             << cppField << ", fieldTypeObject)) {\n" << indent
-            << "pyOut = reinterpret_cast<PyObject *>(sbkOut);\n"
-            << "Py_INCREF(pyOut);\n" << outdent << "} else {\n" << indent
+            << "pyOut = sbkOut.newRef();\n"
+            << outdent << "} else {\n" << indent
             << "pyOut = Shiboken::Object::newObject(fieldTypeObject, "
             << cppField << ", false, true);\n"
             << "Shiboken::Object::setParent(self, pyOut);\n"

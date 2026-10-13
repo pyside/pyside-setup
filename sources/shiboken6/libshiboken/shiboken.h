@@ -20,6 +20,7 @@
 #ifdef Py_GIL_DISABLED
 #include "sbkfailpoint.h"
 #include "sbkftoptions.h"
+#include "sbkheldlocks.h"
 #endif
 #include "sbkerrors.h"
 #include "sbkmodule.h"

@@ -5,6 +5,9 @@
 #include "basewrapper.h"
 #include "basewrapper_p.h"
 #include "pep384impl.h"
+#ifdef Py_GIL_DISABLED
+#  include "sbkstatelock.h"
+#endif
 
 #include <iostream>
 #include <sstream>
@@ -41,6 +44,10 @@ void _debugFormat(std::ostream &s, SbkObject *self)
     } else {
          s << " [Deleted]";
     }
+#ifdef Py_GIL_DISABLED
+    // The graph under the state lock; the bases were read before it
+    Shiboken::StateLockGuard guard;
+#endif
     if (d->hasOwnership)
         s << " [hasOwnership]";
     if (d->containsCppWrapper)
@@ -158,13 +165,18 @@ std::string dumpTree(SbkObject *self)
 
 /*!
     Returns a string with information about the internal state of the instance
-    object \a self, useful for debug purposes.
+    object \a self, useful for debug purposes. On free-threaded builds, it
+    takes the state lock, which the caller must not hold.
  */
 std::string info(SbkObject *self)
 {
     std::ostringstream s;
     const std::string indent;
     info_format_preamble(s, self, indent);
+#ifdef Py_GIL_DISABLED
+    // The graph under the state lock; the preamble reads the type hierarchy
+    Shiboken::StateLockGuard guard;
+#endif
     info_format_parent(s, self, indent);
     info_format_children(s, self, indent);
     info_format_referredObjects(s, self, indent);

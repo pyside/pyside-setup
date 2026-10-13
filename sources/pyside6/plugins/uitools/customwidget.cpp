@@ -74,9 +74,8 @@ QWidget *PyCustomWidget::createWidget(QWidget *parent)
     PyObject *pyParent = nullptr;
     bool unknownParent = false;
     if (parent != nullptr) {
-        pyParent = reinterpret_cast<PyObject *>(Shiboken::BindingManager::instance().retrieveWrapper(parent));
-        if (pyParent != nullptr) {
-            Py_INCREF(pyParent);
+        if (auto wrapper = Shiboken::BindingManager::instance().wrapperRef(parent)) {
+            pyParent = wrapper.newRef();
         } else {
             static Shiboken::Conversions::SpecificConverter converter("QWidget*");
             pyParent = converter.toPython(&parent);

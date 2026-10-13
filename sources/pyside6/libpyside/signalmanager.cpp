@@ -6,6 +6,9 @@
 #include "signalmanager_p.h"
 #include "pyobjectwrapper.h"
 #include "pysideqobject_p.h"
+#ifdef Py_GIL_DISABLED
+#  include "pysideqobject.h"
+#endif
 #include "pysidesignal.h"
 #include "pysidelogging_p.h"
 #include "pysideproperty.h"
@@ -54,9 +57,8 @@ static void destroyMetaObject(PyObject *obj)
 {
     void *ptr = PyCapsule_GetPointer(obj, nullptr);
     auto *meta = reinterpret_cast<PySide::MetaObjectBuilder *>(ptr);
-    SbkObject *wrapper = Shiboken::BindingManager::instance().retrieveWrapper(meta);
-    if (wrapper)
-        Shiboken::BindingManager::instance().releaseWrapper(wrapper);
+    if (auto wrapper = Shiboken::BindingManager::instance().wrapperRef(meta))
+        Shiboken::BindingManager::instance().releaseWrapper(wrapper.object());
     delete meta;
 }
 
@@ -281,9 +283,15 @@ int SignalManagerPrivate::qtPropertyMetacall(QObject *object,
         return result;
 
     Shiboken::GilState gil;
-    auto *pySbkSelf = Shiboken::BindingManager::instance().retrieveWrapper(object);
-    Q_ASSERT(pySbkSelf);
-    auto *pySelf = reinterpret_cast<PyObject *>(pySbkSelf);
+    // Free-threaded, held across the Python call
+    auto pySelfRef = Shiboken::BindingManager::instance().wrapperRef(object);
+#ifdef Py_GIL_DISABLED
+    if (pySelfRef.isNull()) // being deallocated
+        return result;
+#else
+    Q_ASSERT(pySelfRef);
+#endif
+    auto *pySelf = pySelfRef.pyObject();
     Shiboken::AutoDecRef pp_name(Shiboken::String::fromCString(mp.name()));
     PySideProperty *pp = PySide::Property::getObject(pySelf, pp_name);
     if (!pp) {
@@ -354,9 +362,15 @@ int SignalManagerPrivate::qtPythonMetacall(QObject *object, const QMetaObject *m
         << " \"" << method.methodSignature() << '"';
 
     Shiboken::GilState gil;
-    auto *pySbkSelf = Shiboken::BindingManager::instance().retrieveWrapper(object);
-    Q_ASSERT(pySbkSelf);
-    auto *pySelf = reinterpret_cast<PyObject *>(pySbkSelf);
+    // Free-threaded, held across the slot
+    auto pySelfRef = Shiboken::BindingManager::instance().wrapperRef(object);
+#ifdef Py_GIL_DISABLED
+    if (pySelfRef.isNull()) // being deallocated
+        return id - metaObject->methodCount();
+#else
+    Q_ASSERT(pySelfRef);
+#endif
+    auto *pySelf = pySelfRef.pyObject();
     Shiboken::AutoDecRef methodName(Shiboken::String::fromCString(method.name().constData()));
     Shiboken::AutoDecRef pyMethod(PySide::SignalManager::methodGetAttr(pySelf, methodName));
     if (pyMethod.isNull()) {
@@ -617,8 +631,13 @@ static int addMetaMethod(QObject *source, const QByteArray &signature,
                          QMetaMethod::MethodType type)
 {
     const QMetaObject *metaObject = source->metaObject();
-    SbkObject *self = Shiboken::BindingManager::instance().retrieveWrapper(source);
+    auto selfRef = Shiboken::BindingManager::instance().wrapperRef(source);
+    SbkObject *self = selfRef.object();
+#ifdef Py_GIL_DISABLED
+    if (self == nullptr || !Shiboken::Object::hasCppWrapper(self)) {
+#else
     if (!Shiboken::Object::hasCppWrapper(self)) {
+#endif
         qWarning().noquote().nospace() << "libpyside: " << __FUNCTION__
             << ": Cannot add dynamic method \"" << signature << "\" (" << type
             << ") to " << PySide::debugQObject(source) << ": No Wrapper found.";
@@ -684,8 +703,21 @@ int registerMetaMethodGetIndexBA(QObject* source, const QByteArray &signature,
 
 const QMetaObject *retrieveMetaObject(const QObject *cppSelf)
 {
+#ifdef Py_GIL_DISABLED
+    // Qt calls this without a thread state, and a borrowed wrapper may die
+    // meanwhile: hold a reference while the meta object is read.
+    auto &bindingManager = Shiboken::BindingManager::instance();
+    if (!bindingManager.hasWrapper(cppSelf))
+        return nullptr;
+    Shiboken::GilState gil;
+    auto wrapper = bindingManager.wrapperRef(cppSelf);
+    if (wrapper.isNull())
+        return nullptr;
+    return retrieveMetaObject(wrapper.pyObject());
+#else
     SbkObject *pySelf = Shiboken::BindingManager::instance().retrieveWrapper(cppSelf);
     return pySelf != nullptr ? retrieveMetaObject(reinterpret_cast<PyObject *>(pySelf)) : nullptr;
+#endif // Py_GIL_DISABLED
 }
 
 const QMetaObject *retrieveMetaObject(PyObject *self)

@@ -9,9 +9,13 @@
 #include "shibokenclasshelpermacros.h"
 #include "shibokenmacros.h"
 #include "sbkdestructorentry.h"
+#include "sbkwrapperref.h"
 
 #include <set>
 #include <utility>
+#ifdef Py_GIL_DISABLED
+#  include <vector>
+#endif
 
 struct SbkObject;
 
@@ -41,8 +45,28 @@ public:
     void runDeletionInMainThread();
     void addToDeletionInMainThread(const DestructorEntry &);
 
+#ifdef Py_GIL_DISABLED
+    [[nodiscard]] WrapperRef wrapperRef(const void *cptr, PyTypeObject *typeObject) const;
+    [[nodiscard]] WrapperRef wrapperRef(const void *cptr) const;
+    [[nodiscard]] PyTypeObject *wrapperTypeRef(const void *cptr) const;
+
+    struct Registration
+    {
+        WrapperRef winner;
+
+        explicit operator bool() const { return bool(winner); }
+    };
+    [[nodiscard]] Registration registerWrapperUnlessPresent(SbkObject *pyObj, void *cptr,
+                                                            PyTypeObject *typeObject);
+#else // Py_GIL_DISABLED
     SbkObject *retrieveWrapper(const void *cptr, PyTypeObject *typeObject) const;
     SbkObject *retrieveWrapper(const void *cptr) const;
+
+    [[nodiscard]] WrapperRef wrapperRef(const void *cptr, PyTypeObject *typeObject) const
+    { return WrapperRef::fromBorrowed(retrieveWrapper(cptr, typeObject)); }
+    [[nodiscard]] WrapperRef wrapperRef(const void *cptr) const
+    { return WrapperRef::fromBorrowed(retrieveWrapper(cptr)); }
+#endif // Py_GIL_DISABLED
     static PyObject *getOverride(SbkObject *wrapper, PyObject *pyMethodName);
 
     void addClassInheritance(Module::TypeInitStruct *parent, Module::TypeInitStruct *child);
@@ -53,7 +77,11 @@ public:
 
     [[deprecated]] PyTypeObject *resolveType(void **cptr, PyTypeObject *type);
 
+#ifdef Py_GIL_DISABLED
+    std::vector<WrapperRef> getAllPyObjects();
+#else
     std::set<PyObject *> getAllPyObjects();
+#endif
 
     void visitAllPyObjects(ObjectVisitor visitor, void *data);
 

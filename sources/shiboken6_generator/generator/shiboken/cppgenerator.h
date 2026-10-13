@@ -167,6 +167,12 @@ private:
                                                 NamedArgumentFlags flags,
                                                 const GeneratorContext &context,
                                                 ErrorReturn errorReturn);
+    static void writeContainerArgumentCopies(TextStream &s,
+                                             const OverloadData &overloadData);
+    static void writeContainerKeywordArgumentCopies(TextStream &s,
+                                                    const AbstractMetaFunctionCPtr &func,
+                                                    const OverloadData &overloadData,
+                                                    const AbstractMetaArgumentList &args);
     static void writeCommonMethodWrapperPreamble(TextStream &s,
                                                  const OverloadData &overloadData,
                                                  const GeneratorContext &context,
@@ -434,6 +440,7 @@ private:
     void writeMethodCall(TextStream &s, const AbstractMetaFunctionCPtr &func,
                          const GeneratorContext &context, bool usesPyArgs,
                          int maxArgs, const QList<qsizetype> &argumentIndirections,
+                         const QSet<int> &containerArgumentPositions,
                          ErrorReturn errorReturn) const;
 
     static QString getInitFunctionName(const GeneratorContext &context) ;

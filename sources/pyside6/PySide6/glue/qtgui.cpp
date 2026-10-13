@@ -792,8 +792,8 @@ if (_i) {
 // @snippet qstandarditemmodel-clear
 Shiboken::BindingManager &bm = Shiboken::BindingManager::instance();
 // PYSIDE-56, invalidate root item
-if (SbkObject *pyRoot = bm.retrieveWrapper(%CPPSELF.invisibleRootItem()))
-    Shiboken::Object::destroy(pyRoot, %CPPSELF.invisibleRootItem());
+if (auto pyRoot = bm.wrapperRef(%CPPSELF.invisibleRootItem()))
+    Shiboken::Object::destroy(pyRoot.object(), %CPPSELF.invisibleRootItem());
 // @snippet qstandarditemmodel-clear
 
 // @snippet qclipboard-text

@@ -8,6 +8,9 @@
 #include "sbkpython.h"
 #include "shibokenmacros.h"
 #include "sbkdestructorentry.h"
+#ifdef Py_GIL_DISABLED
+#  include "shibokenclasshelpermacros.h"
+#endif
 
 #include <vector>
 #include <string>
@@ -204,7 +207,27 @@ void callCppDestructor(void *cptr)
 using DeleteInOwnerThreadHook = void (*)(SbkObject *sbkObj, DestructorEntry &entry);
 
 LIBSHIBOKEN_API void setDeleteInOwnerThread(DeleteInOwnerThreadHook func);
-#endif
+
+// A private copy of a list, dict or set argument, made before the overload is
+// chosen or when read from the keywords, held until the function returns.
+class LIBSHIBOKEN_API ContainerArgumentCopy
+{
+public:
+    LIBSHIBOKEN_DISABLE_COPY_MOVE(ContainerArgumentCopy)
+
+    explicit ContainerArgumentCopy(PyObject *&arg);
+    ~ContainerArgumentCopy();
+
+    bool copyKeywordArgument(PyObject *&arg);
+    PyObject *original(PyObject *arg) const;
+
+private:
+    void copy(PyObject *&arg);
+
+    PyObject *m_copy = nullptr;
+    PyObject *m_original = nullptr;
+};
+#endif // Py_GIL_DISABLED
 
 /*!
     Sets an error about wrong arguments \a args passed to the function
@@ -439,6 +462,8 @@ LIBSHIBOKEN_API void getOwnership(PyObject *pyObj);
 
 /*!
     Sets python as responsible to delete the underlying C++ object of \a sbkObj.
+    On free-threaded builds, it takes the state lock, which the caller must
+    not hold.
 */
 LIBSHIBOKEN_API void getOwnership(SbkObject *sbkObj);
 
@@ -453,6 +478,8 @@ LIBSHIBOKEN_API void releaseOwnership(PyObject *pyObj);
 /*!
     Release the ownership, so Python will not delete the underlying C++ object
     of \a sbkObj.
+    On free-threaded builds, it takes the state lock, which the caller must
+    not hold.
 */
 LIBSHIBOKEN_API void releaseOwnership(SbkObject *sbkObj);
 
@@ -476,8 +503,29 @@ LIBSHIBOKEN_API std::vector<void *>cppPointers(SbkObject *pyObj);
     Sets the C++ pointer of type \a desiredType of the Python object \a sbkObj to \a cptr.
     Returns true on success, false if the pointer was already set or
     \a desiredType is not in the class hierarchy.
+    On free-threaded builds, it takes the state lock, which the caller must
+    not hold.
 */
 LIBSHIBOKEN_API bool setCppPointer(SbkObject *sbkObj, PyTypeObject *desiredType, void *cptr);
+
+#ifdef Py_GIL_DISABLED
+// A generated constructor's claim on its C++ pointer, held while it runs.
+class LIBSHIBOKEN_API CppPointerClaim
+{
+public:
+    LIBSHIBOKEN_DISABLE_COPY_MOVE(CppPointerClaim)
+
+    CppPointerClaim(SbkObject *sbkObj, PyTypeObject *desiredType);
+    ~CppPointerClaim();
+
+    explicit operator bool() const { return m_ok; }
+
+private:
+    SbkObject *m_object = nullptr;  // null: no claim held
+    unsigned m_index = 0;
+    bool m_ok = false;
+};
+#endif // Py_GIL_DISABLED
 
 /*!
     Returns false and sets a Python RuntimeError if the Python wrapper of \a pyObj is not marked as valid.
@@ -504,6 +552,8 @@ LIBSHIBOKEN_API bool isValid(PyObject *pyObj, bool throwPyError);
     Sets the parent of \a child to \a parent. If \a parent is null,
     \a child will have no parent.
     When an object dies, all its children, grandchildren, etc, are tagged as invalid.
+    On free-threaded builds, it takes the state lock, which the caller must
+    not hold.
 */
 LIBSHIBOKEN_API void setParent(PyObject *parent, PyObject *child);
 
@@ -518,29 +568,43 @@ LIBSHIBOKEN_API void setParentReturnValueHeuristics(PyObject *parent, PyObject *
     Removes \a child from its parent, if any. If \a giveOwnershipBack is
     true, Python takes the ownership of \a child. If \a keepReference is
     true, the reference to \a child is kept.
+    On free-threaded builds, it takes the state lock, which the caller must
+    not hold.
 */
 LIBSHIBOKEN_API void removeParent(SbkObject *child, bool giveOwnershipBack = true,
                                   bool keepReference = false);
 
 /*!
     Marks the object \a self as invalid.
+    On free-threaded builds, it takes the state lock, which the caller must
+    not hold.
+    The objects \a self keeps with keepReference() are not invalidated
+    (PYSIDE-3468).
 */
 LIBSHIBOKEN_API void invalidate(SbkObject *self);
 
 /*!
     Helper function that can be used to invalidate a sequence of objects
     \a pyobj.
+    On free-threaded builds, it takes the state lock, which the caller must
+    not hold.
+    The objects they keep with keepReference() are not invalidated
+    (PYSIDE-3468).
 */
 LIBSHIBOKEN_API void invalidate(PyObject *pyobj);
 
 /*!
     Makes the object \a self valid again.
+    On free-threaded builds, it takes the state lock, which the caller must
+    not hold.
 */
 LIBSHIBOKEN_API void makeValid(SbkObject *self);
 
 /*!
     Destroys any data in the Shiboken structure of \a self and the C++
     pointer \a cppData if the Python object has the ownership.
+    On free-threaded builds, it takes the state lock, which the caller must
+    not hold.
 */
 LIBSHIBOKEN_API void destroy(SbkObject *self, void *cppData);
 

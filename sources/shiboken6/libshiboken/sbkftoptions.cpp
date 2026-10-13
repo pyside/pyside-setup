@@ -48,6 +48,30 @@ namespace Shiboken::FreeThreading {
            A QObject handed to its owner thread while that thread finishes
            is deleted once it has finished, if its deferred deletion missed
            the thread's last flush.
+    \value StateLock
+           The state lock serializes the bookkeeping wrappers share (see
+           \l{The state lock}).
+    \value DictPublishOnce
+           A wrapper's instance dict is created once and never replaced.
+    \value OwnedWrapperLookup
+           A wrapper map lookup takes its reference with
+           PyUnstable_TryIncRef(), so it never revives a dying wrapper.
+    \value OneWrapperPerAddress
+           One C++ object gets one wrapper, also when two threads convert it.
+    \value ConstructorInstallOnce
+           A second \c __init__, from any thread, is refused before a Python
+           \c __init__ or a C++ constructor runs: two threads would both
+           install one.
+    \value ClassAssignCheck
+           A \c __class__ assignment to a class with other C++ bases is
+           refused: the wrapper's C++ objects follow its original bases.
+    \value InvalidateRootsOwned
+           Shiboken.invalidate() holds the objects of the list it walks, which
+           another thread may change.
+    \value ContainerArgumentCopy
+           A generated function works on a private copy of a list, dict or
+           set container argument: another thread may change it during the
+           call.
 */
 
 static std::uint64_t parseOption(const char *e)

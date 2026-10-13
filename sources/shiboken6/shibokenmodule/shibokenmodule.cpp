@@ -11,9 +11,8 @@ bool isValid = Shiboken::Object::isValid(%1, false);
 auto *pyType = reinterpret_cast<PyTypeObject *>(%2);
 if (Shiboken::ObjectType::checkType(pyType)) {
     auto *ptr = reinterpret_cast<void *>(%1);
-    if (auto *wrapper = Shiboken::BindingManager::instance().retrieveWrapper(ptr)) {
-        %PYARG_0 = reinterpret_cast<PyObject *>(wrapper);
-        Py_INCREF(%PYARG_0);
+    if (auto wrapper = Shiboken::BindingManager::instance().wrapperRef(ptr)) {
+        %PYARG_0 = wrapper.newRef();
     } else {
         %PYARG_0 = Shiboken::Object::newObject(pyType, ptr, false, true);
     }
@@ -78,6 +77,15 @@ if (!Shiboken::Object::checkType(%1)) {
 
 
 // @snippet dump-tree
+#ifdef Py_GIL_DISABLED
+// the walk reads every child's type hierarchy, not allowed in a state
+// transaction, and races gc on another thread without the lock
+if (Shiboken::Object::checkType(%1)) {
+    PyErr_SetString(PyExc_NotImplementedError,
+                    "dumpTree() is not available in free-threaded builds");
+    return nullptr;
+}
+#endif
 if (!Shiboken::Object::checkType(%1)) {
     %PYARG_0 = Shiboken::String::fromCString("Ordinary Python type.");
 } else {
@@ -96,6 +104,14 @@ const auto setAll = Shiboken::BindingManager::instance().getAllPyObjects();
 PyObject* listAll = PyList_New(0);
 if (listAll == nullptr)
     return nullptr;
+#ifdef Py_GIL_DISABLED
+for (const auto &o : setAll) {
+    if (PyList_Append(listAll, o.pyObject()) != 0) {
+        Py_DECREF(listAll);
+        return nullptr;
+    }
+}
+#else
 for (auto *o : setAll) {
     if (o != nullptr) {
         if (PyList_Append(listAll, o) != 0) {
@@ -104,6 +120,7 @@ for (auto *o : setAll) {
         }
     }
 }
+#endif // Py_GIL_DISABLED
 return listAll;
 // @snippet getallvalidwrappers
 
@@ -166,6 +183,9 @@ static PyMethodDef freeThreadingFunctions[] = {
         return PyUnicode_FromString(Shiboken::failpointNames());
     }, METH_NOARGS, nullptr},
 #endif // SBK_NO_FAILPOINTS
+    {"heldRawLocks", [](PyObject *, PyObject *) -> PyObject * {
+        return PyUnicode_FromString(Shiboken::heldLockNames());
+    }, METH_NOARGS, nullptr},
     {nullptr, nullptr, 0, nullptr}
 };
 if (PyModule_AddFunctions(module, freeThreadingFunctions) < 0)

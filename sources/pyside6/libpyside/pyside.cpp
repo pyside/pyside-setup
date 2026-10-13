@@ -551,7 +551,9 @@ void destroyQCoreApplication()
         return;
 
     Shiboken::BindingManager &bm = Shiboken::BindingManager::instance();
-    SbkObject *pyQApp = bm.retrieveWrapper(app);
+    // Free-threaded, held across the walk, which compares against it.
+    auto pyQAppRef = bm.wrapperRef(app);
+    SbkObject *pyQApp = pyQAppRef.object();
     PyTypeObject *pyQObjectType = PySide::qObjectType();
     assert(pyQObjectType);
 
@@ -882,8 +884,8 @@ static void invalidatePtr(any_t *object)
     auto &bindingManager = Shiboken::BindingManager::instance();
     if (bindingManager.hasWrapper(object)) {
         Shiboken::GilState state;
-        if (SbkObject *wrapper = bindingManager.retrieveWrapper(object))
-            bindingManager.releaseWrapper(wrapper);
+        if (auto wrapper = bindingManager.wrapperRef(object))
+            bindingManager.releaseWrapper(wrapper.object());
     }
 }
 
@@ -936,20 +938,25 @@ PyTypeObject *getTypeForQObject(const QObject *cppSelf)
 {
     // First check if there are any instances of Python implementations
     // inheriting a PySide class.
+#ifdef Py_GIL_DISABLED
+    // The type only: holding the wrapper could delete the object mid-walk.
+    if (auto *type = Shiboken::BindingManager::instance().wrapperTypeRef(cppSelf)) {
+        Py_DECREF(type);  // borrowed, as before; the class outlives the lookup
+        return type;
+    }
+#else
     auto *existing = Shiboken::BindingManager::instance().retrieveWrapper(cppSelf);
     if (existing != nullptr)
         return reinterpret_cast<PyObject *>(existing)->ob_type;
+#endif
     // Find the best match (will return a PySide type)
     return Shiboken::ObjectType::typeForTypeName(typeName(cppSelf));
 }
 
 PyObject *getWrapperForQObject(QObject *cppSelf, PyTypeObject *sbk_type)
 {
-    auto *pyOut = reinterpret_cast<PyObject *>(Shiboken::BindingManager::instance().retrieveWrapper(cppSelf));
-    if (pyOut) {
-        Py_INCREF(pyOut);
-        return pyOut;
-    }
+    if (auto wrapper = Shiboken::BindingManager::instance().wrapperRef(cppSelf))
+        return wrapper.newRef();
 
     // Setting the property will trigger an QEvent notification, which may call into
     // code that creates the wrapper so only set the property if it isn't already
@@ -960,16 +967,11 @@ PyObject *getWrapperForQObject(QObject *cppSelf, PyTypeObject *sbk_type)
             std::shared_ptr<any_t> shared_with_del(reinterpret_cast<any_t *>(cppSelf), invalidatePtr);
             cppSelf->setProperty(invalidatePropertyName, QVariant::fromValue(shared_with_del));
         }
-        pyOut = reinterpret_cast<PyObject *>(Shiboken::BindingManager::instance().retrieveWrapper(cppSelf));
-        if (pyOut) {
-            Py_INCREF(pyOut);
-            return pyOut;
-        }
+        if (auto wrapper = Shiboken::BindingManager::instance().wrapperRef(cppSelf))
+            return wrapper.newRef();
     }
 
-    pyOut = Shiboken::Object::newObjectWithHeuristics(sbk_type, cppSelf, false, typeName(cppSelf));
-
-    return pyOut;
+    return Shiboken::Object::newObjectWithHeuristics(sbk_type, cppSelf, false, typeName(cppSelf));
 }
 
 static const unsigned char qt_resource_name[] = {

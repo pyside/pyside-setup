@@ -187,6 +187,13 @@ inline PyObject *addMenuActionWithPyObject(QMenu *self, const QIcon &icon,
 Shiboken::BindingManager &bm = Shiboken::BindingManager::instance();
 const auto &actions = %CPPSELF.actions();
 for (auto *act : actions) {
+#ifdef Py_GIL_DISABLED
+    if (auto wrapper = bm.wrapperRef(act)) {
+        auto *pyObj = wrapper.pyObject();
+        Shiboken::Object::setParent(nullptr, pyObj);
+        Shiboken::Object::invalidate(pyObj);
+    }
+#else
     if (auto wrapper = bm.retrieveWrapper(act)) {
         auto pyObj = reinterpret_cast<PyObject *>(wrapper);
         Py_INCREF(pyObj);
@@ -194,6 +201,7 @@ for (auto *act : actions) {
         Shiboken::Object::invalidate(pyObj);
         Py_DECREF(pyObj);
     }
+#endif // Py_GIL_DISABLED
 }
 // @snippet qmenu-clear
 
@@ -426,12 +434,21 @@ Shiboken::Object::keepReference(reinterpret_cast<SbkObject *>(%PYARG_0), "setWid
 const QList<QGraphicsItem *> items = %CPPSELF.items();
 Shiboken::BindingManager &bm = Shiboken::BindingManager::instance();
 for (auto *item : items) {
+#ifdef Py_GIL_DISABLED
+    // no refcount test, the lookup holds a reference of its own;
+    // an item only the scene holds goes in removeParent() anyway
+    if (auto obj = bm.wrapperRef(item)) {
+        Shiboken::Object::invalidate(obj.object());
+        Shiboken::Object::removeParent(obj.object());
+    }
+#else
     SbkObject *obj = bm.retrieveWrapper(item);
     if (obj) {
         if (Py_REFCNT(reinterpret_cast<PyObject *>(obj)) > 1) // If the refcnt is 1 the object will vannish anyway.
             Shiboken::Object::invalidate(obj);
         Shiboken::Object::removeParent(obj);
     }
+#endif // Py_GIL_DISABLED
 }
 %CPPSELF.%FUNCTION_NAME();
 // @snippet qgraphicsscene-clear
@@ -449,8 +466,8 @@ Shiboken::BindingManager &bm = Shiboken::BindingManager::instance();
 // first one was removed.
 for (int i = rootItem->childCount() - 1; i >= 0; --i) {
     QTreeWidgetItem *item = rootItem->child(i);
-    if (SbkObject *wrapper = bm.retrieveWrapper(item))
-        Shiboken::Object::setParent(nullptr, reinterpret_cast<PyObject *>(wrapper));
+    if (auto wrapper = bm.wrapperRef(item))
+        Shiboken::Object::setParent(nullptr, wrapper.pyObject());
 }
 // @snippet qtreewidget-clear
 
@@ -465,6 +482,13 @@ if (%0)
 Shiboken::BindingManager &bm = Shiboken::BindingManager::instance();
 for (int i = 0, count = %CPPSELF.count(); i < count; ++i) {
     QListWidgetItem *item = %CPPSELF.item(i);
+#ifdef Py_GIL_DISABLED
+    if (auto wrapper = bm.wrapperRef(item)) {
+        auto *pyObj = wrapper.pyObject();
+        Shiboken::Object::setParent(nullptr, pyObj);
+        Shiboken::Object::invalidate(pyObj);
+    }
+#else
     if (auto wrapper = bm.retrieveWrapper(item)) {
         auto pyObj = reinterpret_cast<PyObject *>(wrapper);
         Py_INCREF(pyObj);
@@ -472,6 +496,7 @@ for (int i = 0, count = %CPPSELF.count(); i < count; ++i) {
         Shiboken::Object::invalidate(pyObj);
         Py_DECREF(pyObj);
     }
+#endif // Py_GIL_DISABLED
 }
 %CPPSELF.%FUNCTION_NAME();
 // @snippet qlistwidget-clear

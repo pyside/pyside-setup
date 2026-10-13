@@ -5,6 +5,10 @@
 #include "pysideutils.h"
 
 #include <autodecref.h>
+#include <bindingmanager.h>
+#ifdef Py_GIL_DISABLED
+#  include <gilstate.h>
+#endif
 #include <helper.h>
 #include <pep384ext.h>
 #include <sbkpep.h>
@@ -37,6 +41,47 @@ bool inherits(PyTypeObject *objType, const char *class_name)
         return false;
 
     return inherits(base, class_name);
+}
+
+/*!
+    \group freethreading
+    \title Free-threaded builds
+    \inmodule libpyside
+
+    \brief What libpyside adds when Python runs without a GIL.
+
+    Only where \c Py_GIL_DISABLED is defined. The option bits and the state
+    lock are in libshiboken.
+*/
+
+/*!
+    \ingroup freethreading
+
+    Returns whether the wrapper type of \a cppSelf inherits \a class_name,
+    for the generated qt_metacast(); \c false without a wrapper.
+    Free-threaded, the caller needs no thread state.
+*/
+bool wrapperInherits(const void *cppSelf, const char *class_name)
+{
+#ifdef Py_GIL_DISABLED
+    // The type only: holding the wrapper could delete the object in qt_metacast()
+    auto &bindingManager = Shiboken::BindingManager::instance();
+    if (!bindingManager.hasWrapper(cppSelf))
+        return false;
+    Shiboken::GilState gil;
+    auto *type = bindingManager.wrapperTypeRef(cppSelf);
+    if (type == nullptr)
+        return false;
+    const bool result = inherits(type, class_name);
+    Py_DECREF(type);
+    return result;
+#else
+    if (SbkObject *pySelf = Shiboken::BindingManager::instance().retrieveWrapper(cppSelf)) {
+        auto *obSelf = reinterpret_cast<PyObject *>(pySelf);
+        return inherits(Py_TYPE(obSelf), class_name);
+    }
+    return false;
+#endif // Py_GIL_DISABLED
 }
 
 QString pyUnicodeToQString(PyObject *str)
