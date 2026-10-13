@@ -25,6 +25,10 @@
 
 #include <private/qremoteobjectrepparser_p.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 using namespace Qt::StringLiterals;
 using namespace Shiboken;
 
@@ -122,7 +126,12 @@ static PyTypeObject *createRepFileType()
 
 PyTypeObject *PySideRepFile_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createRepFileType);
+#else
     static auto *type = createRepFileType();
+#endif
     return type;
 }
 
@@ -222,6 +231,18 @@ static int parseArgsToAST(PyObject *args, PySideRepFile *repFile)
     return 0;
 }
 
+#ifdef Py_GIL_DISABLED
+// a type is made in Qt's registry of QtRemoteObjects, see RepRegistryGuard
+extern "C++" {
+template <class Make>
+static QMetaObject *registered(Make make)
+{
+    RepRegistryGuard guard;
+    return make();
+}
+} // extern "C++"
+#endif
+
 static const char *repName(QMetaObject *meta)
 {
     const int ind = meta->indexOfClassInfo(QCLASSINFO_REMOTEOBJECT_TYPE);
@@ -237,9 +258,13 @@ static int RepFile_tp_init(PyObject *self, PyObject *args, PyObject * /* kwds */
     for (const auto &pod : std::as_const(cppSelf->d->ast.pods)) {
         cppSelf->d->pods << pod.name;
         auto *qobject = new QObject;
+#ifdef Py_GIL_DISABLED
+        auto *meta = registered([&] { return createAndRegisterMetaTypeFromPOD(pod, qobject); });
+#else
         auto *meta = createAndRegisterMetaTypeFromPOD(pod, qobject);
+#endif
         if (!meta) {
-            delete qobject;
+            deleteTrackedObject(qobject);
             PyErr_Format(PyExc_RuntimeError, "Failed to create meta object for POD '%s'",
                          pod.name.toUtf8().constData());
             return -1;
@@ -247,14 +272,14 @@ static int RepFile_tp_init(PyObject *self, PyObject *args, PyObject * /* kwds */
 
         PyTypeObject *newType = createPodType(meta);
         if (!newType) {
-            delete qobject;
+            deleteTrackedObject(qobject);
             PyErr_Print();
             PyErr_Format(PyExc_RuntimeError, "Failed to create POD type for POD '%s'",
                          pod.name.toUtf8().constData());
             return -1;
         }
         if (set_cleanup_capsule_attr_for_pointer(newType, "_qobject_capsule", qobject) < 0) {
-            delete qobject;
+            deleteTrackedObject(qobject);
             return -1;
         }
 
@@ -272,9 +297,15 @@ static int RepFile_tp_init(PyObject *self, PyObject *args, PyObject * /* kwds */
         // Create Source type
         {
             auto *qobject = new QObject;
+#ifdef Py_GIL_DISABLED
+            auto *meta = registered([&] {
+                return createAndRegisterSourceFromASTClass(cls, qobject);
+            });
+#else
             auto *meta = createAndRegisterSourceFromASTClass(cls, qobject);
+#endif
             if (!meta) {
-                delete qobject;
+                deleteTrackedObject(qobject);
                 PyErr_Format(PyExc_RuntimeError, "Failed to create Source meta object for class '%s'",
                              cls.name.toUtf8().constData());
                 return -1;
@@ -283,7 +314,7 @@ static int RepFile_tp_init(PyObject *self, PyObject *args, PyObject * /* kwds */
             auto properties = generateProperties(meta, cls);
             // Check if an error occurred during generateProperties
             if (PyErr_Occurred()) {
-                delete qobject;
+                deleteTrackedObject(qobject);
                 return -1;
             }
             auto *propertiesPtr = new QVariantList(properties);
@@ -293,14 +324,14 @@ static int RepFile_tp_init(PyObject *self, PyObject *args, PyObject * /* kwds */
 
             PyTypeObject *newType = createDynamicClass(meta, pyCapsule);
             if (!newType) {
-                delete qobject;
+                deleteTrackedObject(qobject);
                 PyErr_Format(PyExc_RuntimeError,
                              "Failed to create Source Python type for class '%s'",
                              meta->className());
                 return -1;
             }
             if (set_cleanup_capsule_attr_for_pointer(newType, "_qobject_capsule", qobject) < 0) {
-                delete qobject;
+                deleteTrackedObject(qobject);
                 return -1;
             }
 
@@ -312,9 +343,15 @@ static int RepFile_tp_init(PyObject *self, PyObject *args, PyObject * /* kwds */
         // Create Replica type
         {
             auto *qobject = new QObject;
+#ifdef Py_GIL_DISABLED
+            auto *meta = registered([&] {
+                return createAndRegisterReplicaFromASTClass(cls, qobject);
+            });
+#else
             auto *meta = createAndRegisterReplicaFromASTClass(cls, qobject);
+#endif
             if (!meta) {
-                delete qobject;
+                deleteTrackedObject(qobject);
                 PyErr_Format(PyExc_RuntimeError,
                              "Failed to create Replica meta object for class '%s'",
                              qPrintable(cls.name));
@@ -324,7 +361,7 @@ static int RepFile_tp_init(PyObject *self, PyObject *args, PyObject * /* kwds */
             auto properties = generateProperties(meta, cls);
             // Check if an error occurred during generateProperties
             if (PyErr_Occurred()) {
-                delete qobject;
+                deleteTrackedObject(qobject);
                 return -1;
             }
             auto *propertiesPtr = new QVariantList(properties);
@@ -334,14 +371,14 @@ static int RepFile_tp_init(PyObject *self, PyObject *args, PyObject * /* kwds */
 
             PyTypeObject *newType = createDynamicClass(meta, pyCapsule);
             if (!newType) {
-                delete qobject;
+                deleteTrackedObject(qobject);
                 PyErr_Format(PyExc_RuntimeError,
                              "Failed to create Replica Python type for class '%s'",
                              meta->className());
                 return -1;
             }
             if (set_cleanup_capsule_attr_for_pointer(newType, "_qobject_capsule", qobject) < 0) {
-                delete qobject;
+                deleteTrackedObject(qobject);
                 return -1;
             }
 

@@ -10,7 +10,39 @@
 
 #include <QtCore/qmetaobject.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkftoptions.h>
+#  include <sbkheldlocks.h>
+
+#  include <mutex>
+#endif
+
 int capsule_count = 0;
+
+#ifdef Py_GIL_DISABLED
+// Not a raw lock: Qt may warn under it, which runs a Python message handler,
+// and that may drop a dynamic type, whose deletion takes the lock again
+static std::recursive_mutex &repRegistryMutex()
+{
+    static std::recursive_mutex mutex;
+    return mutex;
+}
+
+RepRegistryGuard::RepRegistryGuard()
+{
+    if (!Shiboken::FreeThreading::optionEnabled(Shiboken::FreeThreading::Option::RepRegistryLock))
+        return;
+    Shiboken::lockDetached(repRegistryMutex());
+    m_locked = true;
+}
+
+RepRegistryGuard::~RepRegistryGuard()
+{
+    if (!m_locked)
+        return;
+    repRegistryMutex().unlock();
+}
+#endif // Py_GIL_DISABLED
 
 using namespace Shiboken;
 

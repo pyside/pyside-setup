@@ -549,6 +549,24 @@ def test_qml_helper_component() -> str:
     return run_qml("testFirstComponentLoadFromTwoThreads")
 
 
+def test_source_property() -> str:
+    """A source property read while another thread sets it is intact."""
+    return run_unittest(TESTS_DIR / "pysidetest" / "remoteobjects_freethreading_test.py",
+                        "RemoteObjectsFreeThreadedTest.testPropertyReadWhileSet")
+
+
+def test_dynamic_types() -> str:
+    """Dynamic types created in several threads all succeed."""
+    return run_unittest(TESTS_DIR / "pysidetest" / "remoteobjects_freethreading_test.py",
+                        "RemoteObjectsFreeThreadedTest.testTypesFromThreads")
+
+
+def test_type_qualname() -> str:
+    """Making a dynamic type does not wait for a thread busy in C code."""
+    return run_unittest(TESTS_DIR / "pysidetest" / "remoteobjects_freethreading_test.py",
+                        "RemoteObjectsFreeThreadedTest.testTypeCreationWithoutStopTheWorld")
+
+
 def test_one_wrapper_per_address() -> str:
     """Two threads converting one C++ object get one wrapper."""
     if gil_enabled():
@@ -820,6 +838,18 @@ TESTS = {
     "proof-qml-helper-component": Test(lambda: counterproof(
         "QmlHelperModuleOnce", "qml-helper-component",
         "the helper module was published twice")),
+    "dynamic-types": Test(test_dynamic_types),
+    "proof-dynamic-types-registry": Test(lambda: counterproof(
+        "RepRegistryLock", "dynamic-types", "a type creation failed")),
+    "type-qualname": Test(test_type_qualname),
+    "proof-type-qualname": Test(lambda: counterproof(
+        "NewTypeQualname", "type-qualname", "a type creation waited for a stop-the-world")
+        if sys.version_info >= (3, 15)
+        else "skipped: the __qualname__ setter stops the world only from Python 3.15 on"),
+    "source-property": Test(test_source_property),
+    "proof-source-property": Test(lambda: counterproof(
+        "SourcePropertyCopy", "source-property",
+        "a source property was read while another thread set it")),
 }
 
 

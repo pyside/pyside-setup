@@ -62,6 +62,8 @@ enum class Option : std::uint64_t
     QmlPlacementType = 0x80000000000,
     QmlImportGlobalsOwned = 0x100000000000,
     QmlHelperModuleOnce = 0x200000000000,
+    SourcePropertyCopy = 0x400000000000,
+    RepRegistryLock = 0x800000000000,
     SignalNameOnce = 0x1000000000000,
     SignalClassList = 0x2000000000000,
     SignalClassListCheck = 0x4000000000000,

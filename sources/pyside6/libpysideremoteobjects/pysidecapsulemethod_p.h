@@ -24,6 +24,10 @@ struct CapsuleDescriptorData
 */
 PyTypeObject *CapsuleMethod_TypeF(void);
 
+#ifdef Py_GIL_DISABLED
+PyObject *capsuleMethodPayload(PyObject *self);
+#endif
+
 /*!
     \brief The new type defining a descriptor that stores a PyCapsule.
 

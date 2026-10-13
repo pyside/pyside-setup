@@ -30,6 +30,11 @@
 
 #include <cstring>
 #include <cctype>
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#  include <sbkftoptions.h>
+#  include <utility>
+#endif
 
 using namespace Shiboken;
 
@@ -47,9 +52,51 @@ extern "C"
 
 PyObject *propertiesAttr()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString s("__PROPERTIES__");
+#else
     static PyObject *const s = Shiboken::String::createStaticString("__PROPERTIES__");
+#endif
     return s;
 }
+
+#ifdef Py_GIL_DISABLED
+// Another thread may set a source property while it is read: reads copy,
+// writes swap, under the object's critical section.
+static bool readSourceProperty(PyObject *self, const QVariantList *list, qsizetype index,
+                               QVariant *value)
+{
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::SourcePropertyCopy)) {
+        if (index < 0 || index >= list->size())
+            return false;
+        *value = list->at(index);
+        return true;
+    }
+    bool found = false;
+    Py_BEGIN_CRITICAL_SECTION(self);
+    if (index >= 0 && index < list->size()) {
+        *value = list->at(index);
+        found = true;
+    }
+    Py_END_CRITICAL_SECTION();
+    return found;
+}
+
+static void writeSourceProperty(PyObject *self, QVariantList *list, qsizetype index,
+                                QVariant value)
+{
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::SourcePropertyCopy)) {
+        list->replace(index, value);
+        return;
+    }
+    // The old value goes after the section
+    Py_BEGIN_CRITICAL_SECTION(self);
+    std::swap((*list)[index], value);
+    Py_END_CRITICAL_SECTION();
+}
+#endif // Py_GIL_DISABLED
 
 struct SourceDefs
 {
@@ -94,6 +141,9 @@ struct SourceDefs
 
     static PyObject *capsule_method_handler(PyObject *payload, PyObject *args)
     {
+#ifdef Py_GIL_DISABLED
+        payload = capsuleMethodPayload(payload);
+#endif
         auto *methodData = reinterpret_cast<CapsuleDescriptorData *>(PyCapsule_GetPointer(payload,
                                                                                           "Payload"));
         if (!methodData) {
@@ -110,13 +160,21 @@ struct SourceDefs
                                                      nullptr);
                 auto *currentProperties = reinterpret_cast<QVariantList *>(propPtr);
                 auto *callData = reinterpret_cast<PropertyCapsule *>(capsule);
+#ifdef Py_GIL_DISABLED
+                QVariant currentVariant;
+                if (!readSourceProperty(self, currentProperties, callData->indexInObject,
+                                        &currentVariant)) {
+#else
                 if (callData->indexInObject < 0
                     || callData->indexInObject >= currentProperties->size()) {
+#endif
                     PyErr_Format(PyExc_RuntimeError, "Unknown property method: %s",
                                  callData->name.constData());
                     return nullptr;
                 }
+#ifndef Py_GIL_DISABLED
                 const QVariant &currentVariant = currentProperties->at(callData->indexInObject);
+#endif
 
                 // Handle getter
                 if (PyTuple_Size(args) == 0)
@@ -145,7 +203,11 @@ struct SourceDefs
                 if (variant == currentVariant)
                     Py_RETURN_NONE;
 
+#ifdef Py_GIL_DISABLED
+                writeSourceProperty(self, currentProperties, callData->indexInObject, variant);
+#else
                 currentProperties->replace(callData->indexInObject, variant);
+#endif
                 // Get the QMetaObject and emit the property changed signal if there is one
                 const auto *metaObject = PySide::retrieveMetaObject(self);
                 auto metaProperty = metaObject->property(callData->propertyIndex);
@@ -205,14 +267,26 @@ struct ReplicaDefs
 {
     static PyTypeObject *getSbkType()
     {
+#ifdef Py_GIL_DISABLED
+        static Shiboken::OnceValue<PyTypeObject *> sbkTypeOnce;
+        PyTypeObject *sbkType = sbkTypeOnce.get([] {
+            return Shiboken::Conversions::getPythonTypeObject("QRemoteObjectReplica");
+        });
+#else
         static PyTypeObject *sbkType =
             Shiboken::Conversions::getPythonTypeObject("QRemoteObjectReplica");
+#endif
         return sbkType;
     }
 
     static PyObject *getBases()
     {
+#ifdef Py_GIL_DISABLED
+        static Shiboken::OnceValue<PyObject *> basesOnce;
+        PyObject *bases = basesOnce.get([] { return PyTuple_Pack(1, getSbkType()); });
+#else
         static PyObject *bases = PyTuple_Pack(1, getSbkType());
+#endif
         return bases;
     }
 
@@ -223,8 +297,12 @@ struct ReplicaDefs
 
     static int tp_init(PyObject *self, PyObject *args, PyObject *kwds)
     {
+#ifdef Py_GIL_DISABLED
+        auto initFunc = reinterpret_cast<initproc>(PyType_GetSlot(getSbkType(), Py_tp_init));
+#else
         static auto initFunc = reinterpret_cast<initproc>(PyType_GetSlot(getSbkType(),
                                                                          Py_tp_init));
+#endif
         QRemoteObjectReplica *replica = nullptr;
         if (PyTuple_Size(args) == 0) {
             if (initFunc(self, args, kwds) < 0)
@@ -235,7 +313,14 @@ struct ReplicaDefs
             PyObject *node = nullptr;
             PyObject *constructorType = nullptr;
             PyObject *name = nullptr;
+#ifdef Py_GIL_DISABLED
+            static Shiboken::OnceValue<PyTypeObject *> nodeTypeOnce;
+            PyTypeObject *nodeType = nodeTypeOnce.get([] {
+                return Shiboken::Conversions::getPythonTypeObject("QRemoteObjectNode");
+            });
+#else
             static PyTypeObject *nodeType = Shiboken::Conversions::getPythonTypeObject("QRemoteObjectNode");
+#endif
             if (!PyArg_UnpackTuple(args, "Replica.__init__", 2, 3, &node, &constructorType, &name) ||
                 !PySide::inherits(Py_TYPE(node), PepType_GetFullyQualifiedNameStr(nodeType))) {
                 PyErr_SetString(PyExc_TypeError,
@@ -272,6 +357,9 @@ struct ReplicaDefs
 
     static PyObject *capsule_method_handler(PyObject *payload, PyObject *args)
     {
+#ifdef Py_GIL_DISABLED
+        payload = capsuleMethodPayload(payload);
+#endif
         auto *methodData = reinterpret_cast<CapsuleDescriptorData *>(PyCapsule_GetPointer(payload,
                                                                                           "Payload"));
         if (!methodData) {
@@ -327,7 +415,14 @@ struct ReplicaDefs
                     return nullptr;
                 }
                 QVariantList _args;
+#ifdef Py_GIL_DISABLED
+                static Shiboken::OnceValue<Conversions::SpecificConverter *> argsConverterOnce;
+                auto &argsConverter = *argsConverterOnce.get([] {
+                    return new Conversions::SpecificConverter("QVariantList");
+                });
+#else
                 static Conversions::SpecificConverter argsConverter("QVariantList");
+#endif
                 argsConverter.toCpp(args, &_args);
                 if (PyErr_Occurred()) // POD conversion can produce an error
                     return nullptr;
@@ -339,8 +434,15 @@ struct ReplicaDefs
                 auto *cppResult = new QRemoteObjectPendingCall;
                 *cppResult = static_cast<FriendlyReplica *>(replica)->sendWithReply(QMetaObject::InvokeMetaMethod,
                                                     callData->methodIndex, _args);
+#ifdef Py_GIL_DISABLED
+                static Shiboken::OnceValue<PyTypeObject *> baseTypeOnce;
+                PyTypeObject *baseType = baseTypeOnce.get([] {
+                    return Shiboken::Conversions::getPythonTypeObject("QRemoteObjectPendingCall");
+                });
+#else
                 static PyTypeObject *baseType =
                     Shiboken::Conversions::getPythonTypeObject("QRemoteObjectPendingCall");
+#endif
                 Q_ASSERT(baseType);
                 auto *pyResult = Shiboken::Object::newObject(baseType, cppResult, true, true);
                 return pyResult;

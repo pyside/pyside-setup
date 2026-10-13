@@ -18,6 +18,10 @@
 
 #include <QtCore/qmetaobject.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 using namespace Shiboken;
 
 extern "C"
@@ -91,6 +95,9 @@ struct PodDefs
 
     static PyObject *CapsuleMethod_handler(PyObject *payload, PyObject * /* args */)
     {
+#ifdef Py_GIL_DISABLED
+        payload = capsuleMethodPayload(payload);
+#endif
         auto *methodData = reinterpret_cast<CapsuleDescriptorData *>(
             PyCapsule_GetPointer(payload, "Payload"));
         if (!methodData) {
@@ -139,7 +146,14 @@ static PyObject *cppToPython_POD_Tuple(const void *cppIn)
     PyObject *pyOut = PyTuple_New(Py_ssize_t(cppInRef.size()));
     Py_ssize_t idx = 0;
     for (auto it = std::cbegin(cppInRef), end = std::cend(cppInRef); it != end; ++it, ++idx) {
+#ifdef Py_GIL_DISABLED
+        static Shiboken::OnceValue<const Conversions::SpecificConverter *> argConverterOnce;
+        const auto &argConverter = *argConverterOnce.get([] {
+            return new Conversions::SpecificConverter("QVariant");
+        });
+#else
         static const Conversions::SpecificConverter argConverter("QVariant");
+#endif
         const auto &cppItem = *it;
         PyTuple_SetItem(pyOut, idx, Shiboken::Conversions::copyToPython(argConverter, &cppItem));
     }
@@ -159,7 +173,14 @@ static void pythonToCpp_Tuple_POD(PyObject *pyIn, void *cppOut)
     }
 
     for (auto [i, item] : pyInRange) {
+#ifdef Py_GIL_DISABLED
+        static Shiboken::OnceValue<const Conversions::SpecificConverter *> argConverterOnce;
+        [[maybe_unused]] const auto &argConverter = *argConverterOnce.get([] {
+            return new Conversions::SpecificConverter("QVariant");
+        });
+#else
         static const Conversions::SpecificConverter argConverter("QVariant");
+#endif
         QVariant &variant = cppOutRef[i];
         const auto metaType = variant.metaType();
         if (!metaType.isValid()) {
@@ -253,7 +274,11 @@ PyTypeObject *createPodType(QMetaObject *meta)
     Shiboken::Conversions::addPythonToCppValueConversion(converter, pythonToCpp_Tuple_POD,
                                                          is_Tuple_PythonToCpp_POD_Convertible);
 
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString module("PySide6.QtRemoteObjects");
+#else
     static PyObject *const module = String::createStaticString("PySide6.QtRemoteObjects");
+#endif
     AutoDecRef pyQualname(String::fromCString(qualname.constData()));
     PyObject_SetAttr(obType, PyMagicName::qualname(), pyQualname);
     PyObject_SetAttr(obType, PyMagicName::module(), module);

@@ -36,10 +36,6 @@ NOT_PROVABLE: dict[str, str] = {
     "ModuleRegistryLock": "B13-3: concurrent unordered_map insert and find from two legal "
                           "first imports are UB inside the library operation; a failpoint "
                           "cannot sit in a rehash, and about 20 entries give no rate",
-    "TypeFactoryLock": "concurrent first imports reach it, but one thread's restore of the "
-                       "metaclass must fall into the nanoseconds before another's check: "
-                       "0/20 for three sets of imports; a failpoint proof needs two parked "
-                       "threads. Proven from the dynamic types of QtRemoteObjects on",
 }
 
 # Measures kept without a bit or proof: measure -> open item (not proven)

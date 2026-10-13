@@ -10,6 +10,7 @@
 #include <QtCore/qlist.h>
 #include <QtCore/qvariant.h>
 #include <QtCore/qmetatype.h>
+#include <QtCore/qobject.h>
 
 PyObject *toPython(const QVariant &variant);
 int create_managed_py_enums(PyObject *self, QMetaObject *meta);
@@ -42,6 +43,32 @@ struct MethodCapsule
 
 extern int capsule_count;
 
+#ifdef Py_GIL_DISABLED
+// Qt's registry of QtRemoteObjects' dynamic types has no lock: types are
+// made and their tracked objects deleted under this one
+class RepRegistryGuard
+{
+public:
+    Q_DISABLE_COPY_MOVE(RepRegistryGuard)
+
+    RepRegistryGuard();
+    ~RepRegistryGuard();
+
+private:
+    bool m_locked = false;
+};
+#endif // Py_GIL_DISABLED
+
+// Deletes a QObject that Qt's registry tracks: the deletion unregisters its
+// type, on free-threaded builds under RepRegistryGuard
+inline void deleteTrackedObject(QObject *qobject)
+{
+#ifdef Py_GIL_DISABLED
+    RepRegistryGuard guard;
+#endif
+    delete qobject;
+}
+
 template <typename T>
 void Capsule_destructor(PyObject *capsule)
 {
@@ -50,6 +77,15 @@ void Capsule_destructor(PyObject *capsule)
     delete pointer;
     pointer = nullptr;
 }
+
+#ifdef Py_GIL_DISABLED
+template <>
+inline void Capsule_destructor<QObject *>(PyObject *capsule)
+{
+    capsule_count--;
+    deleteTrackedObject(static_cast<QObject *>(PyCapsule_GetPointer(capsule, nullptr)));
+}
+#endif
 
 template <>
 inline void Capsule_destructor<SbkConverter *>(PyObject *capsule)

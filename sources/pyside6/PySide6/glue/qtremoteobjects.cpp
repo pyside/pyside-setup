@@ -13,10 +13,20 @@ if (!PySide::inherits(typeObject, SbkPySide6_QtRemoteObjectsTypeStructs[SBK_QRem
     return nullptr;
 }
 
+#ifdef Py_GIL_DISABLED
+static Shiboken::OnceValue<PyObject *> pyConstructWithNodeOnce;
+PyObject *pyConstructWithNode = pyConstructWithNodeOnce.get([] {
+    return Shiboken::Enum::newItem(
+        Shiboken::Module::get(SbkPySide6_QtRemoteObjectsTypeStructs[SBK_QRemoteObjectReplica_ConstructorType_IDX]),
+        1 /* protected QRemoteObjectReplica::ConstructorType::ConstructWithNode */
+    );
+});
+#else
 static PyObject *pyConstructWithNode = Shiboken::Enum::newItem(
     Shiboken::Module::get(SbkPySide6_QtRemoteObjectsTypeStructs[SBK_QRemoteObjectReplica_ConstructorType_IDX]),
     1 /* protected QRemoteObjectReplica::ConstructorType::ConstructWithNode */
 );
+#endif
 
 Shiboken::AutoDecRef args;
 if (pyArgs[1])

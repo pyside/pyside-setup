@@ -179,6 +179,12 @@ namespace Shiboken::FreeThreading {
     \value QmlHelperModuleOnce
            The helper modules of PySide6.QtQmlFeatures are published once:
            two first uses would store one each.
+    \value SourcePropertyCopy
+           A QtRemoteObjects source property is read as a copy and set by a
+           swap: another thread may set it meanwhile.
+    \value RepRegistryLock
+           QtRemoteObjects dynamic types are made under a lock; Qt's name
+           registry has none.
     \value SignalNameOnce
            The name of a signal attached after its class was made is set
            once: its first instances may be made in several threads.
