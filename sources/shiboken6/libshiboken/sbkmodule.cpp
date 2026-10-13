@@ -10,6 +10,13 @@
 #include "sbkcppstring.h"
 #include "sbkconverter_p.h"
 #include "sbkpep.h"
+#ifdef Py_GIL_DISABLED
+#  include "sbkfailpoint.h"
+#  include "sbkftoptions.h"
+#  include "sbkheldlocks.h"
+#  include "sbkstaticstrings.h"
+#  include "shibokenclasshelpermacros.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -18,6 +25,10 @@
 #include <vector>
 #include <cstring>
 #include <string_view>
+#ifdef Py_GIL_DISABLED
+#  include <mutex>
+#  include <optional>
+#endif
 
 /// This hash maps module objects to arrays of converters.
 using ModuleConvertersMap = std::unordered_map<PyObject *, SbkConverter **> ;
@@ -73,9 +84,40 @@ struct ModuleData
 
 static ModuleData *moduleData()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<ModuleData *> data;
+    return data.get([] { return new ModuleData; });
+#else
     static ModuleData data;
     return &data;
+#endif
 }
+
+#ifdef Py_GIL_DISABLED
+static std::mutex &moduleRegistryMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+// Module execs run at once on free-threaded builds and insert into the same
+// maps. Map work only.
+class ModuleRegistryGuard
+{
+public:
+    LIBSHIBOKEN_DISABLE_COPY(ModuleRegistryGuard)
+
+    ModuleRegistryGuard()
+    {
+        if (Shiboken::FreeThreading::optionEnabled(
+                Shiboken::FreeThreading::Option::ModuleRegistryLock))
+            m_guard.emplace(moduleRegistryMutex());
+    }
+
+private:
+    std::optional<Shiboken::TrackedGuard<std::mutex, Shiboken::RawLock::ModuleRegistry>> m_guard;
+};
+#endif // Py_GIL_DISABLED
 
 /*!
     \namespace Shiboken::Module
@@ -326,12 +368,28 @@ static PyObject *PyModule_lazyGetAttro(PyObject *module, PyObject *name)
 //              This modification is only for "our" modules.
 static PyObject *_module_dir_template(PyObject * /* self */, PyObject *args)
 {
+#ifdef Py_GIL_DISABLED
+    PyObject *const _dict = Shiboken::PyMagicName::dict();
+#else
     static PyObject *const _dict = Shiboken::String::createStaticString("__dict__");
+#endif
     // The dir function must replace all of the builtin function.
     PyObject *module{};
     if (!PyArg_ParseTuple(args, "O", &module))
         return nullptr;
 
+#ifdef Py_GIL_DISABLED
+    // The node of the module's table is stable; its own exec is over.
+    auto &nameToFunc = [module]() -> NameToTypeFunctionMap & {
+        ModuleRegistryGuard guard;
+        auto &moduleToFuncs = moduleData()->moduleToFuncs;
+        auto tableIter = moduleToFuncs.find(module);
+        assert(tableIter != moduleToFuncs.end());
+        return tableIter->second;
+    }();
+    Shiboken::AutoDecRef dict(PyObject_GetAttr(module, _dict));
+    auto *ret = PyDict_Keys(dict);
+#else
     auto &moduleToFuncs = moduleData()->moduleToFuncs;
     auto tableIter = moduleToFuncs.find(module);
     assert(tableIter != moduleToFuncs.end());
@@ -339,6 +397,7 @@ static PyObject *_module_dir_template(PyObject * /* self */, PyObject *args)
     auto *ret = PyDict_Keys(dict);
     // Now add all elements that were not yet in the dict.
     auto &nameToFunc = tableIter->second;
+#endif // Py_GIL_DISABLED
     for (const auto &funcIter : nameToFunc) {
         if (funcIter.first.find('.') == std::string::npos) { // no nested types
             Shiboken::AutoDecRef pyName(Shiboken::String::fromCppString(funcIter.first));
@@ -381,13 +440,25 @@ static int constexpr IMPORT_NAME_OpCode(long pyVersion)
 
 static bool detectImportStar(PyObject *dec_frame, PyObject *module)
 {
+#ifdef Py_GIL_DISABLED
+    PyObject *const _f_code = Shiboken::PyName::f_code();
+    static Shiboken::OnceString _f_lasti("f_lasti");
+    static Shiboken::OnceString _co_code("co_code");
+    static Shiboken::OnceString _co_consts("co_consts");
+    static Shiboken::OnceString _co_names("co_names");
+#else
     static PyObject *const _f_code = Shiboken::String::createStaticString("f_code");
     static PyObject *const _f_lasti = Shiboken::String::createStaticString("f_lasti");
     static PyObject *const _co_code = Shiboken::String::createStaticString("co_code");
     static PyObject *const _co_consts = Shiboken::String::createStaticString("co_consts");
     static PyObject *const _co_names = Shiboken::String::createStaticString("co_names");
+#endif
 
+#ifdef Py_GIL_DISABLED
+    const long pyVersion = _PepRuntimeVersion();
+#else
     static const long pyVersion = _PepRuntimeVersion();
+#endif
     static const int LOAD_CONST = LOAD_CONST_OpCode(pyVersion);
     static const int IMPORT_NAME = IMPORT_NAME_OpCode(pyVersion);
 
@@ -441,7 +512,11 @@ static bool isImportStar(PyObject *module)
     // Find out whether we have a star import. This must work even
     // when we have no import support from feature.
 
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString _f_back("f_back");
+#else
     static PyObject *const _f_back = Shiboken::String::createStaticString("f_back");
+#endif
 
     auto *obFrame = reinterpret_cast<PyObject *>(PyEval_GetFrame());
     if (obFrame == nullptr)
@@ -527,11 +602,22 @@ void AddTypeCreationFunction(PyObject *module,
                              TypeCreationFunction func)
 {
     // - locate the module in the moduleTofuncs mapping
+#ifdef Py_GIL_DISABLED
+    // The node is stable; the table itself belongs to this exec.
+    auto &nameToFunc = [module]() -> NameToTypeFunctionMap & {
+        ModuleRegistryGuard guard;
+        auto &moduleToFuncs = moduleData()->moduleToFuncs;
+        auto tableIter = moduleToFuncs.find(module);
+        assert(tableIter != moduleToFuncs.end());
+        return tableIter->second;
+    }();
+#else
     auto &moduleToFuncs = moduleData()->moduleToFuncs;
     auto tableIter = moduleToFuncs.find(module);
     assert(tableIter != moduleToFuncs.end());
     // - Assign the name/generating function tcStruct.
     auto &nameToFunc = tableIter->second;
+#endif // Py_GIL_DISABLED
     TypeCreationStruct tcStruct{func, {}};
     auto nit = nameToFunc.find(name);
     if (nit == nameToFunc.end())
@@ -549,11 +635,22 @@ void AddTypeCreationFunction(PyObject *module,
                              const char *subTypeNamePath)
 {
     // - locate the module in the moduleTofuncs mapping
+#ifdef Py_GIL_DISABLED
+    // The node is stable; the table itself belongs to this exec.
+    auto &nameToFunc = [module]() -> NameToTypeFunctionMap & {
+        ModuleRegistryGuard guard;
+        auto &moduleToFuncs = moduleData()->moduleToFuncs;
+        auto tableIter = moduleToFuncs.find(module);
+        assert(tableIter != moduleToFuncs.end());
+        return tableIter->second;
+    }();
+#else
     auto &moduleToFuncs = moduleData()->moduleToFuncs;
     auto tableIter = moduleToFuncs.find(module);
     assert(tableIter != moduleToFuncs.end());
     // - Assign the name/generating function tcStruct.
     auto &nameToFunc = tableIter->second;
+#endif // Py_GIL_DISABLED
     auto nit = nameToFunc.find(enclosingName);
 
     // - insert namePath into the subtype vector of the main type.
@@ -571,14 +668,35 @@ void AddTypeCreationFunction(PyObject *module,
         incarnateHelper(module, namePath, nameToFunc);
 }
 
-PyObject *import(const char *moduleName)
+#ifdef Py_GIL_DISABLED
+// Another thread may be running the module's exec: the module is in
+// sys.modules half initialized, only the import waits for it.
+static PyObject *importModule(const char *moduleName)
 {
+    if (FreeThreading::optionEnabled(FreeThreading::Option::ModuleImportWaits))
+        return PyImport_ImportModule(moduleName);
     PyObject *sysModules = PyImport_GetModuleDict();
     PyObject *module = PyDict_GetItemString(sysModules, moduleName);
     if (module != nullptr)
         Py_INCREF(module);
     else
         module = PyImport_ImportModule(moduleName);
+    return module;
+}
+#endif // Py_GIL_DISABLED
+
+PyObject *import(const char *moduleName)
+{
+#ifdef Py_GIL_DISABLED
+    PyObject *module = importModule(moduleName);
+#else
+    PyObject *sysModules = PyImport_GetModuleDict();
+    PyObject *module = PyDict_GetItemString(sysModules, moduleName);
+    if (module != nullptr)
+        Py_INCREF(module);
+    else
+        module = PyImport_ImportModule(moduleName);
+#endif
 
     if (module == nullptr) {
         PyErr_Format(PyExc_ImportError,
@@ -637,21 +755,51 @@ PyObject *create(const char *moduleName, PyModuleDef *moduleData)
     return module;
 }
 
+#ifdef Py_GIL_DISABLED
+// The __dir__ for not yet created types; free-threaded builds create them all
+// at once, so only the counter-proof of ModuleDirDefault adds it.
+static void addModuleDir(PyObject *module)
+{
+    auto *moduleDirTemplate = PyCFunction_NewEx(module_methods, nullptr, nullptr);
+    auto *moduleDir = PyObject_CallFunctionObjArgs(moduleData()->partial, moduleDirTemplate,
+                                                   module, nullptr);
+    PepModule_Add(module, module_methods->ml_name, moduleDir);  // steals reference
+}
+#endif // Py_GIL_DISABLED
+
 void exec(PyObject *module)
 {
     auto *data = moduleData();
+#ifdef Py_GIL_DISABLED
+    // The module dict names every type: dir() needs no __dir__ of our own,
+    // which another thread could call before the table below exists.
+    if (!FreeThreading::optionEnabled(FreeThreading::Option::ModuleDirDefault))
+        addModuleDir(module);
+    Shiboken::failpoint("module-dir-before-table");
+#else
     // Setup of a dir function for "missing" classes.
     auto *moduleDirTemplate = PyCFunction_NewEx(module_methods, nullptr, nullptr);
     // Turn this function into a bound object, so we have access to the module.
     auto *moduleDir = PyObject_CallFunctionObjArgs(data->partial, moduleDirTemplate, module, nullptr);
     PepModule_Add(module, module_methods->ml_name, moduleDir);  // steals reference
+#endif // Py_GIL_DISABLED
     // Insert an initial empty table for the module.
     NameToTypeFunctionMap empty;
+#ifdef Py_GIL_DISABLED
+    const bool importStar = isImportStar(module);   // reads the frame: not under the lock
+    {
+        ModuleRegistryGuard guard;
+        data->moduleToFuncs.insert(std::make_pair(module, empty));
+        if (importStar)
+            data->dontLazyLoad.insert(PyModule_GetName(module));
+    }
+#else
     data->moduleToFuncs.insert(std::make_pair(module, empty));
 
     // A star import must be done unconditionally. Use the complete name.
     if (isImportStar(module))
         data->dontLazyLoad.insert(PyModule_GetName(module));
+#endif // Py_GIL_DISABLED
 
     // Free-threaded builds have no lazy loading: no getattr patch, no import redirection.
 #ifndef Py_GIL_DISABLED
@@ -677,10 +825,16 @@ void exec(PyObject *module)
     PyDict_SetItemString(data->sysModules, PyModule_GetName(module), module);
     // Clear the non-existing name cache because we have a new module.
     Shiboken::Conversions::clearNegativeLazyCache();
+#ifdef Py_GIL_DISABLED
+    Shiboken::failpoint("module-exec-before-types");
+#endif
 }
 
 void registerTypes(PyObject *module, TypeInitStruct *types)
 {
+#ifdef Py_GIL_DISABLED
+    ModuleRegistryGuard guard;
+#endif
     auto &moduleTypes = moduleGlobalData()->moduleTypes;
     auto iter = moduleTypes.find(module);
     if (iter == moduleTypes.end())
@@ -689,6 +843,9 @@ void registerTypes(PyObject *module, TypeInitStruct *types)
 
 TypeInitStruct *getTypes(PyObject *module)
 {
+#ifdef Py_GIL_DISABLED
+    ModuleRegistryGuard guard;
+#endif
     auto &moduleTypes = moduleGlobalData()->moduleTypes;
     auto iter = moduleTypes.find(module);
     return (iter == moduleTypes.end()) ? 0 : iter->second;
@@ -696,6 +853,9 @@ TypeInitStruct *getTypes(PyObject *module)
 
 void registerTypeConverters(PyObject *module, SbkConverter **converters)
 {
+#ifdef Py_GIL_DISABLED
+    ModuleRegistryGuard guard;
+#endif
     auto &moduleConverters = moduleGlobalData()->moduleConverters;
     auto iter = moduleConverters.find(module);
     if (iter == moduleConverters.end())
@@ -704,6 +864,9 @@ void registerTypeConverters(PyObject *module, SbkConverter **converters)
 
 SbkConverter **getTypeConverters(PyObject *module)
 {
+#ifdef Py_GIL_DISABLED
+    ModuleRegistryGuard guard;
+#endif
     auto &moduleConverters = moduleGlobalData()->moduleConverters;
     auto iter = moduleConverters.find(module);
     return (iter == moduleConverters.end()) ? 0 : iter->second;
@@ -721,6 +884,11 @@ bool replaceModuleDict(PyObject *module, PyObject *modClass, PyObject *dict)
 {
     if (!(PyModule_Check(module) && PyType_Check(modClass) && PyDict_Check(dict)))
         return false;
+#ifdef Py_GIL_DISABLED
+    // Another thread could see the module between the two stores below.
+    if (FreeThreading::optionEnabled(FreeThreading::Option::ModuleDictKept))
+        return false;
+#endif
     auto *modict = PyModule_GetDict(module);
     auto *modIntern = reinterpret_cast<StartOf_PyModuleObject *>(module);
     if (modict != modIntern->md_dict)
@@ -729,6 +897,9 @@ bool replaceModuleDict(PyObject *module, PyObject *modClass, PyObject *dict)
     modIntern->md_dict = dict;
     Py_INCREF(dict);
     Py_DECREF(hold);
+#ifdef Py_GIL_DISABLED
+    Shiboken::failpoint("module-dict-between-stores");
+#endif
     Py_INCREF(modClass);
     module->ob_type = reinterpret_cast<PyTypeObject *>(modClass);
     return true;

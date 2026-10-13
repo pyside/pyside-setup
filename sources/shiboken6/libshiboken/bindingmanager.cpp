@@ -16,7 +16,7 @@
 #include "sbkfeature_base.h"
 #include "sbkmodule.h"
 #include "sbkpep.h"
-#include "sbkpytuplerange.h"
+#include "sbktypetupleref.h"
 #include "sbkstaticstrings.h"
 #include "sbkstring.h"
 
@@ -30,6 +30,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #ifdef Py_GIL_DISABLED
+#  include <memory>
+#  include <optional>
 #  include <vector>
 #endif
 
@@ -100,6 +102,148 @@ using MainThreadDeleteGuard = TrackedGuard<std::mutex, RawLock::MainThreadDelete
 using WrapperMap = std::unordered_multimap<const void *, SbkObject *>;
 #endif // Py_GIL_DISABLED
 
+#ifdef Py_GIL_DISABLED
+using ClassHierarchyGuard = TrackedGuard<std::mutex, RawLock::ClassHierarchy>;
+
+// Copy-on-write: imports add edges while conversions walk them, and a walker
+// cannot hold a lock (identifyType() runs Python).
+template <class NodeType>
+class BaseGraph
+{
+public:
+    using NodeList = std::vector<NodeType>;
+    using NodeSet = std::unordered_set<NodeType>;
+
+    using Edges = std::unordered_map<NodeType, NodeList>;
+    using EdgesPtr = std::shared_ptr<const Edges>;
+
+    BaseGraph() : m_edges(std::make_shared<Edges>()) {}
+
+    void addEdge(NodeType from, NodeType to)
+    {
+        ClassHierarchyGuard guard(m_mutex);
+        if (!FreeThreading::optionEnabled(FreeThreading::Option::ClassHierarchySnapshot)) {
+            // In place, under the walkers, as in the base.
+            (*m_edges)[from].push_back(to);
+            return;
+        }
+        auto next = std::make_shared<Edges>(*m_edges);
+        (*next)[from].push_back(to);
+        m_edges = std::move(next);
+    }
+
+    // The current edges, held by the caller while it walks.
+    EdgesPtr edges() const
+    {
+        ClassHierarchyGuard guard(m_mutex);
+        return m_edges;
+    }
+
+    static NodeSet nodeSet(const Edges &snapshot)
+    {
+        NodeSet result;
+        for (const auto &p : snapshot) {
+            result.insert(p.first);
+            for (const auto node2 : p.second)
+                result.insert(node2);
+        }
+        return result;
+    }
+
+private:
+    std::shared_ptr<Edges> m_edges;
+    mutable std::mutex m_mutex;
+};
+
+class Graph : public BaseGraph<GraphNode>
+{
+public:
+    using TypeCptrPair = BindingManager::TypeCptrPair;
+
+    // Find derived class by trying to find a child node that accepts the base class in
+    // its type discovery function, return type and cptr cast to derived class.
+    TypeCptrPair identifyType(void *cptr, PyTypeObject *type, PyTypeObject *baseType) const
+    {
+        // One snapshot for the whole walk.
+        const auto snapshot = edges();
+        return identifyType(*snapshot, cptr, GraphNode(type->tp_name), type, baseType);
+    }
+
+    bool dumpTypeGraph(const char *fileName) const;
+
+private:
+    TypeCptrPair identifyType(const Edges &snapshot, void *cptr, GraphNode typeNode,
+                              PyTypeObject *type, PyTypeObject *baseType) const;
+};
+
+Graph::TypeCptrPair Graph::identifyType(const Edges &snapshot, void *cptr,
+                                        GraphNode typeNode, PyTypeObject *type,
+                                        PyTypeObject *baseType) const
+{
+    assert(typeNode.initStruct != nullptr || type != nullptr);
+    auto edgesIt = snapshot.find(typeNode);
+    if (edgesIt != snapshot.end()) {
+        typeNode = edgesIt->first;
+        const NodeList &adjNodes = edgesIt->second;
+        for (const auto &node : adjNodes) {
+            auto newType = identifyType(snapshot, cptr, node, nullptr, baseType);
+            if (newType.first != nullptr)
+                return newType;
+        }
+    }
+
+    if (type == nullptr) {
+        if (typeNode.initStruct->type == nullptr) // Layzily create type
+            type = Shiboken::Module::get(*typeNode.initStruct);
+        else
+            type = typeNode.initStruct->type;
+    }
+
+    if (void *derivedCPtr = BindingManager::runTypeDiscovery(cptr, type, baseType))
+        return {type, derivedCPtr};
+    return {nullptr, nullptr};
+}
+
+static void formatDotNode(std::string_view name, std::ostream &file)
+{
+    auto lastDot = name.rfind('.');
+    file << "    \"" << name << "\" [ label=";
+    if (lastDot != std::string::npos) {
+        file << '"' << name.substr(lastDot + 1) << "\" tooltip=\""
+             << name.substr(0, lastDot) << '"';
+    } else {
+        file << '"' << name << '"';
+    }
+    file << " ]\n";
+}
+
+bool Graph::dumpTypeGraph(const char *fileName) const
+{
+    // Written unlocked, from one snapshot.
+    const auto snapshot = edges();
+
+    std::ofstream file(fileName);
+    if (!file.good())
+        return false;
+
+    file << "digraph D {\n";
+
+    // Define nodes with short names
+    for (const auto &node : nodeSet(*snapshot))
+        formatDotNode(node.name, file);
+
+    // Write edges
+    auto it = snapshot->cbegin();
+    Shiboken::failpoint("hierarchy-mid-traversal");
+    for (; it != snapshot->cend(); ++it) {
+        const auto &node1 = it->first;
+        for (const auto &node2 : it->second)
+            file << "    \"" << node2.name << "\" -> \"" << node1.name << "\"\n";
+    }
+    file << "}\n";
+    return true;
+}
+#else // Py_GIL_DISABLED
 template <class NodeType>
 class BaseGraph
 {
@@ -212,6 +356,8 @@ bool Graph::dumpTypeGraph(const char *fileName) const
     file << "}\n";
     return true;
 }
+
+#endif // Py_GIL_DISABLED
 
 struct BindingManager::BindingManagerPrivate {
     using DestructorEntries = std::vector<DestructorEntry>;
@@ -458,18 +604,33 @@ void BindingManager::releaseWrapper(SbkObject *sbkObj)
 #ifdef Py_GIL_DISABLED
 void BindingManager::runDeletionInMainThread()
 {
+    if (!FreeThreading::optionEnabled(FreeThreading::Option::MainThreadQueueLock)) {
+        // Bit cleared: iterated in place, as in the base.
+        for (const DestructorEntry &e : m_d->deleteInMainThread) {
+            e.destructor(e.cppInstance);
+            Shiboken::failpoint("main-delete-mid-run");
+        }
+        m_d->deleteInMainThread.clear();
+        return;
+    }
     BindingManagerPrivate::DestructorEntries pending;
     {
         MainThreadDeleteGuard guard(m_d->deleteInMainThreadLock);
         pending.swap(m_d->deleteInMainThread);
     }
-    // Taken over, not iterated in place: a destructor can queue more.
-    for (const DestructorEntry &e : pending)
+    // Taken over: another thread's dealloc may queue more meanwhile.
+    for (const DestructorEntry &e : pending) {
         e.destructor(e.cppInstance);
+        Shiboken::failpoint("main-delete-mid-run");
+    }
 }
 
 void BindingManager::addToDeletionInMainThread(const DestructorEntry &e)
 {
+    if (!FreeThreading::optionEnabled(FreeThreading::Option::MainThreadQueueLock)) {
+        m_d->deleteInMainThread.push_back(e);
+        return;
+    }
     MainThreadDeleteGuard guard(m_d->deleteInMainThreadLock);
     m_d->deleteInMainThread.push_back(e);
 }
@@ -641,11 +802,11 @@ PyObject *BindingManager::getOverride(SbkObject *wrapper, PyObject *pyMethodName
         return nullptr;
     }
 
-    PyTypeObject *type = Py_TYPE(obWrapper);
+    PepMroRef mroRef(Py_TYPE(obWrapper));
     bool defaultFound = false;
     // The first class in the mro (index 0) is the class being checked and it should not be tested.
     // The last class in the mro (size - 1) is the base Python object class which should not be tested also.
-    for (PyTypeObject *parent : Shiboken::PyTupleTypeRange(type->tp_mro).slice(1).chop(1)) {
+    for (PyTypeObject *parent : mroRef.slice(1).chop(1)) {
         AutoDecRef parentDict(PepType_GetDict(parent));
         if (parentDict) {
             if (PyObject *defaultMethod = PyDict_GetItem(parentDict.object(), pyMethodName)) {
@@ -720,13 +881,33 @@ std::vector<WrapperRef> BindingManager::getAllPyObjects()
     // Multiple inheritance registers one wrapper under several pointers.
     std::vector<WrapperRef> result;
     std::set<const SbkObject *> seen;
-    WrapperMapGuard guard(m_d->wrapperMapLock);
-    for (const auto &entry : m_d->wrapperMapper) {
-        auto ref = WrapperRef::fromOwned(entry.second.acquire());
-        if (ref.isNull() || !seen.insert(ref.object()).second)
-            continue;
-        result.push_back(std::move(ref));
+    if (!FreeThreading::optionEnabled(FreeThreading::Option::WrapperWalkOwned)) {
+        // Bit cleared: borrowed under the lock as in the base, referenced afterwards.
+        std::vector<SbkObject *> borrowed;
+        {
+            WrapperMapGuard guard(m_d->wrapperMapLock);
+            for (const auto &entry : m_d->wrapperMapper) {
+                if (seen.insert(entry.second.borrowed()).second)
+                    borrowed.push_back(entry.second.borrowed());
+            }
+        }
+        Shiboken::failpoint("walk-after-collect");
+        for (auto *wrapper : borrowed) {
+            Py_INCREF(reinterpret_cast<PyObject *>(wrapper));
+            result.push_back(WrapperRef::fromOwned(wrapper));
+        }
+        return result;
     }
+    {
+        WrapperMapGuard guard(m_d->wrapperMapLock);
+        for (const auto &entry : m_d->wrapperMapper) {
+            auto ref = WrapperRef::fromOwned(entry.second.acquire());
+            if (ref.isNull() || !seen.insert(ref.object()).second)
+                continue;
+            result.push_back(std::move(ref));
+        }
+    }
+    Shiboken::failpoint("walk-after-collect");
     return result;
 }
 #else // Py_GIL_DISABLED
@@ -753,14 +934,37 @@ std::set<PyObject *> BindingManager::getAllPyObjects()
 void BindingManager::visitAllPyObjects(ObjectVisitor visitor, void *data)
 {
 #ifdef Py_GIL_DISABLED
-    // Collected first, visited without the lock: a visitor runs Python and
-    // C++ destructors, which change the map. The references keep the
-    // collected wrappers alive until their turn.
-    const std::vector<WrapperRef> wrappers = getAllPyObjects();
+    // Collected first, visited without the lock: a visitor runs Python and C++
+    // destructors. The references keep the wrappers alive; an entry is visited
+    // only while still in the map, as in the base.
+    const bool owned = FreeThreading::optionEnabled(FreeThreading::Option::WrapperWalkOwned);
+    std::vector<std::pair<const void *, SbkObject *>> entries;
+    std::vector<WrapperRef> holds;
+    {
+        WrapperMapGuard guard(m_d->wrapperMapLock);
+        for (const auto &entry : m_d->wrapperMapper) {
+            if (!owned) {
+                entries.emplace_back(entry.first, entry.second.borrowed());
+                continue;
+            }
+            auto ref = WrapperRef::fromOwned(entry.second.acquire());
+            if (ref.isNull())
+                continue;
+            entries.emplace_back(entry.first, ref.object());
+            holds.push_back(std::move(ref));
+        }
+    }
     Shiboken::checkNoRawLock(__func__);
-    for (const auto &wrapper : wrappers)
-        visitor(wrapper.object(), data);
-#else
+    for (const auto &[cptr, wrapper] : entries) {
+        bool mapped = false;
+        {
+            WrapperMapGuard guard(m_d->wrapperMapLock);
+            mapped = m_d->findSbkObject(cptr, wrapper) != m_d->wrapperMapper.cend();
+        }
+        if (mapped)
+            visitor(wrapper, data);
+    }
+#else // Py_GIL_DISABLED
     WrapperMap copy = m_d->wrapperMapper;
     for (const auto &p : copy) {
         if (m_d->findSbkObject(p.first, p.second) != m_d->wrapperMapper.cend())
@@ -777,12 +981,21 @@ bool BindingManager::dumpTypeGraph(const char *fileName) const
 void BindingManager::dumpWrapperMap()
 {
 #ifdef Py_GIL_DISABLED
-    WrapperMapGuard guard(m_d->wrapperMapLock);
-#endif
+    // The hierarchy first: its lock ranks below the map lock.
+    const auto typeCount = Graph::nodeSet(*m_d->classHierarchy.edges()).size();
+    std::optional<WrapperMapGuard> guard;
+    if (FreeThreading::optionEnabled(FreeThreading::Option::WrapperDumpLocked))
+        guard.emplace(m_d->wrapperMapLock);
+    const auto &wrapperMap = m_d->wrapperMapper;
+    std::cerr <<  "-------------------------------\n"
+        << "WrapperMap size: " << wrapperMap.size() << " Types: "
+        << typeCount << '\n';
+#else
     const auto &wrapperMap = m_d->wrapperMapper;
     std::cerr <<  "-------------------------------\n"
         << "WrapperMap size: " << wrapperMap.size() << " Types: "
         << m_d->classHierarchy.nodeSet().size() << '\n';
+#endif // Py_GIL_DISABLED
     for (auto it : wrapperMap) {
 #ifdef Py_GIL_DISABLED
         auto *ob = reinterpret_cast<PyObject *>(it.second.borrowed());
@@ -793,6 +1006,9 @@ void BindingManager::dumpWrapperMap()
             << static_cast<const void *>(ob) << " ("
             << PepType_GetFullyQualifiedNameStr(Py_TYPE(ob)) << ", refcnt: "
             << Py_REFCNT(ob) << ")\n";
+#ifdef Py_GIL_DISABLED
+        Shiboken::failpoint("dump-mid-walk");
+#endif
     }
     std::cerr << "-------------------------------\n";
 }
@@ -809,16 +1025,25 @@ bool callInheritedInit(PyObject *self, PyObject *args, PyObject *kwds,
 {
     using Shiboken::AutoDecRef;
 
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString _init("__init__");
+    static Shiboken::OnceValue<PyObject *> objectInitOnce;
+    PyObject *objectInit = objectInitOnce.get([&] {
+        return PyObject_GetAttr(reinterpret_cast<PyObject *>(&PyBaseObject_Type), _init);
+    });
+#else
     static PyObject *const _init = String::createStaticString("__init__");
     static PyObject *objectInit =
         PyObject_GetAttr(reinterpret_cast<PyObject *>(&PyBaseObject_Type), _init);
+#endif
 
     // A native C++ self cannot have multiple inheritance.
     if (!Object::isUserType(self))
         return false;
 
+    PepMroRef mroRef(Py_TYPE(self));
     /* No need to check the last one: it's gonna be skipped anyway.  */
-    auto mroRange = Shiboken::PyTupleTypeRange(Py_TYPE(self)->tp_mro).chop(1);
+    const auto &mroRange = mroRef.chop(1);
     const auto mroEnd = mroRange.end();
 
     const char *className = typeStruct.fullName;

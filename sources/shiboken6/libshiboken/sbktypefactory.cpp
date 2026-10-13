@@ -9,6 +9,11 @@
 #include "sbkpytuplerange.h"
 #include "sbkstring.h"
 #include "sbkstaticstrings.h"
+#ifdef Py_GIL_DISABLED
+#  include "basewrapper.h"
+#  include "basewrapper_p.h"
+#  include "sbkftoptions.h"
+#endif
 
 #include <cstring>
 #include <iostream>
@@ -54,6 +59,65 @@ static PyObject *_PyType_FromSpecWithBases(PyType_Spec *, PyObject *);
 //              Hopefully, the Python devs will supply the missing support.
 //              It turned out that they will not fix that, as expected.
 // Note: Python 3.12 is the first version that grabs the metaclass from base classes.
+#ifdef Py_GIL_DISABLED
+// Free-threaded builds change no shared type object: another thread could
+// create its type in between. PyType_FromMetaclass refuses the tp_new of
+// Shiboken.ObjectType, so its types are made by a subclass of it with the
+// tp_new of type, and then get their metaclass. `object` is not patched,
+// PyType_FromMetaclass takes the metaclass directly.
+static PyObject *_PyType_FromSpecWithBasesHack(PyType_Spec *spec,
+                                               PyObject *bases,
+                                               PyTypeObject *meta)
+{
+    AutoDecRef basesPatch{};
+    if (bases == Py_None) {
+        // PYSIDE-2230: The SbkObject entry, which has no base to provide the metaclass.
+        assert(meta);
+        basesPatch.reset(Py_BuildValue("(O)", &PyBaseObject_Type));
+        bases = basesPatch.object();
+    }
+
+    // The metaclass with a tp_new of its own, as the patch below finds it
+    PyTypeObject *customMeta = meta != nullptr && meta->tp_new != PyType_Type.tp_new
+        ? meta : nullptr;
+    if (bases != nullptr) {
+        for (auto *obBase : Shiboken::PyTupleRange(bases)) {
+            if (Py_TYPE(obBase)->tp_new != PyType_Type.tp_new)
+                customMeta = Py_TYPE(obBase);
+        }
+    }
+    // Only Shiboken.ObjectType has one; any other gets CPython's TypeError
+    PyTypeObject *factoryMeta = meta;
+    if (customMeta != nullptr && SbkObjectType_FactoryTypeF()->tp_base == customMeta)
+        factoryMeta = SbkObjectType_FactoryTypeF();
+    auto *ret = PyType_FromMetaclass(factoryMeta, nullptr /*module*/, spec, bases);
+    if (ret != nullptr && factoryMeta != meta) {
+        PyTypeObject *hold = std::exchange(ret->ob_type, customMeta);
+        Py_INCREF(reinterpret_cast<PyObject *>(customMeta));
+        Py_DECREF(reinterpret_cast<PyObject *>(hold));
+    }
+    return ret;
+}
+
+// The __qualname__ setter stops the world on Python 3.15, once per type, so
+// threads that make types meet in a stop-the-world storm. A type that
+// PyType_FromMetaclass() has just made still has ht_qualname == ht_name: the
+// new value is stored directly, and the old one stays alive through ht_name
+// for a thread that reads it meanwhile.
+static int setNewTypeQualname(PyTypeObject *type, PyObject *qualname)
+{
+    auto *ht = reinterpret_cast<PyHeapTypeObject *>(type);
+    if (!Shiboken::FreeThreading::optionEnabled(Shiboken::FreeThreading::Option::NewTypeQualname)
+        || ht->ht_qualname != ht->ht_name) {
+        return PyObject_SetAttr(reinterpret_cast<PyObject *>(type),
+                                Shiboken::PyMagicName::qualname(), qualname);
+    }
+    PyObject *old = ht->ht_qualname;
+    _Py_atomic_store_ptr_release(&ht->ht_qualname, Py_NewRef(qualname));
+    Py_DECREF(old);
+    return 0;
+}
+#else // Py_GIL_DISABLED
 static PyObject *_PyType_FromSpecWithBasesHack(PyType_Spec *spec,
                                                PyObject *bases,
                                                PyTypeObject *meta)
@@ -108,7 +172,15 @@ static PyObject *_PyType_FromSpecWithBasesHack(PyType_Spec *spec,
     }
     return ret;
 }
+#endif // Py_GIL_DISABLED
 
+/*!
+    \fn PyTypeObject *SbkType_FromSpec_BMDWB(PyType_Spec *spec, PyObject *bases, PyTypeObject *meta, int dictoffset, int weaklistoffset, PyBufferProcs *bufferprocs)
+
+    Creates a type from \a spec with \a bases, the metaclass \a meta, and
+    \a dictoffset, \a weaklistoffset and \a bufferprocs. On free-threaded
+    builds, no shared type object is changed.
+*/
 PyTypeObject *SbkType_FromSpec_BMDWB(PyType_Spec *spec,
                                      PyObject *bases,
                                      PyTypeObject *meta,
@@ -178,8 +250,13 @@ PyTypeObject *SbkType_FromSpec_BMDWB(PyType_Spec *spec,
 #else
     if (PyObject_SetAttr(obType, Shiboken::PyMagicName::module(), module) < 0)
         return nullptr;
+#  ifdef Py_GIL_DISABLED
+    if (setNewTypeQualname(type, qualname) < 0)
+        return nullptr;
+#  else
     if (PyObject_SetAttr(obType, Shiboken::PyMagicName::qualname(), qualname) < 0)
         return nullptr;
+#  endif
     PyType_Modified(type);
 #endif
     return type;

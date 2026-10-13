@@ -7,6 +7,10 @@
 
 #include <sbkpython.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <atomic>
+#endif
+
 namespace PySide
 {
 
@@ -19,8 +23,13 @@ struct Globals // Per interpreter globals of libpyside
     int lastSelectedFeatureId = 0;
     PyTypeObject *qobjectType = nullptr;
     PyObject *emptyTuple = nullptr;
+#ifdef Py_GIL_DISABLED
+    std::atomic<PyObject *> pickleReduceFunc{nullptr};
+    std::atomic<PyObject *> pickleSafeLoadsFunc{nullptr};
+#else
     PyObject *pickleReduceFunc = nullptr;
     PyObject *pickleSafeLoadsFunc = nullptr;
+#endif
 };
 
 Globals *globals();

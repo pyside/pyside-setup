@@ -179,6 +179,11 @@ struct SbkObjectTypePrivate
     unsigned int delete_in_main_thread : 1;
 };
 
+#ifdef Py_GIL_DISABLED
+/// The metaclass the type factory makes types of Shiboken.ObjectType with,
+/// see sbktypefactory.cpp
+PyTypeObject *SbkObjectType_FactoryTypeF();
+#endif
 
 } // extern "C"
 

@@ -13,6 +13,9 @@
 #include <sbkpydictrange.h>
 #include <sbktypefactory.h>
 #include <sbkstring.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkpep.h> // PepDict_IterationSnapshot()
+#endif
 
 extern "C"
 {
@@ -92,6 +95,14 @@ int ClassInfoPrivate::tp_init(PyObject *self, PyObject *args, PyObject *kwds)
 
     auto *pData = DecoratorPrivate::get<ClassInfoPrivate>(self);
 
+#ifdef Py_GIL_DISABLED
+    // A copy: another thread may change the caller's dict.
+    Shiboken::AutoDecRef snapshot(PepDict_IterationSnapshot(infoDict));
+    if (snapshot.isNull())
+        PyErr_Clear();
+    else
+        infoDict = snapshot.object();
+#endif
     for (auto [key, value] : Shiboken::PyDictRange(infoDict)) {
         if (Shiboken::String::check(key) && Shiboken::String::check(value)) {
             ClassInfo info{Shiboken::String::toCString(key),

@@ -14,6 +14,12 @@
 #include "sbkpep.h"
 #include "sbkpydictrange.h"
 #include "voidptr.h"
+#ifdef Py_GIL_DISABLED
+#  include "sbkfailpoint.h"
+#  include "sbkftoptions.h"
+#  include "sbkheldlocks.h"
+#  include "shibokenclasshelpermacros.h"
+#endif
 
 #include <string>
 #include <cstring>
@@ -22,11 +28,108 @@
 #include <unordered_set>
 #include <map>
 #include <set>
+#ifdef Py_GIL_DISABLED
+#  include <mutex>
+#  include <optional>
+#  include <utility>
+#endif
 
 static SbkConverter **PrimitiveTypeConverters;
 
 using ConvertersMap = std::unordered_map<std::string, SbkConverter *>;
 static ConvertersMap converters;
+
+#ifdef Py_GIL_DISABLED
+static std::mutex &convertersMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+// Names and negative cache: imports and runtime types add names while other
+// threads look them up. Map work only.
+class ConverterRegistryGuard
+{
+public:
+    LIBSHIBOKEN_DISABLE_COPY(ConverterRegistryGuard)
+
+    ConverterRegistryGuard()
+    {
+        if (Shiboken::FreeThreading::optionEnabled(
+                Shiboken::FreeThreading::Option::ConverterRegistryLock))
+            m_guard.emplace(convertersMutex());
+    }
+
+private:
+    std::optional<Shiboken::TrackedGuard<std::mutex, Shiboken::RawLock::ConverterRegistry>> m_guard;
+};
+#endif // Py_GIL_DISABLED
+
+#ifdef Py_GIL_DISABLED
+/*!
+    \class ToCppConversionList
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    The Python-to-C++ conversions of one converter. A module init extends
+    other modules' converters while threads iterate them, running Python:
+    readers take no lock and walk the list they loaded; writers publish a
+    new list under the registry lock, and a replaced one lives as long as
+    the converter.
+*/
+ToCppConversionList::ToCppConversionList()
+    : m_current(new ToCppConversionVector)
+{
+}
+
+ToCppConversionList::~ToCppConversionList()
+{
+    delete current();
+    for (const auto *list : m_replaced)
+        delete list;
+}
+
+void ToCppConversionList::publish(ToCppConversionVector *next)
+{
+    m_replaced.push_back(current());
+    m_current.store(next, std::memory_order_release);
+}
+
+void ToCppConversionList::clear()
+{
+    if (current()->empty())
+        return;
+    ConverterRegistryGuard guard;
+    publish(new ToCppConversionVector);
+}
+
+void ToCppConversionList::emplace_back(const ToCppConversion &conversion)
+{
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::ConverterRegistryLock)) {
+        const_cast<ToCppConversionVector *>(current())->push_back(conversion);
+        return;
+    }
+    ConverterRegistryGuard guard;
+    auto *next = new ToCppConversionVector(*current());
+    next->push_back(conversion);
+    publish(next);
+}
+
+void ToCppConversionList::insert(Iterator pos, const ToCppConversion &conversion)
+{
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::ConverterRegistryLock)) {
+        auto *list = const_cast<ToCppConversionVector *>(current());
+        list->insert(list->begin() + pos.index(), conversion);
+        return;
+    }
+    ConverterRegistryGuard guard;
+    auto *next = new ToCppConversionVector(*current());
+    next->insert(next->begin() + pos.index(), conversion);
+    publish(next);
+}
+#endif // Py_GIL_DISABLED
 
 bool SbkObject_TypeCheck(PyTypeObject *tp, PyObject *ob)
 {
@@ -151,7 +254,15 @@ void dumpConverters()
 
     // Sort the entries by the associated PyTypeObjects and converters
     PyTypeObjectConverterMap pyTypeObjectConverterMap;
+#ifdef Py_GIL_DISABLED
+    const ConvertersMap snapshot = [] {
+        ConverterRegistryGuard guard;
+        return converters;
+    }();
+    for (const auto &converter : snapshot) {
+#else
     for (const auto &converter : converters) {
+#endif
         auto *sbkConverter = converter.second;
         if (sbkConverter == nullptr) {
             str << "Non-existent: \"" << converter.first << "\"\n";
@@ -403,6 +514,20 @@ PythonToCppConversion pythonToCppPointerConversion(Module::TypeInitStruct typeSt
     return pythonToCppPointerConversion(typeStruct.type, pyIn);
 }
 
+#ifdef Py_GIL_DISABLED
+static inline PythonToCppFunc IsPythonToCppConvertible(const SbkConverter *converter, PyObject *pyIn)
+{
+    assert(pyIn);
+    bool first = true;
+    for (const ToCppConversion &c : converter->toCppConversions) {
+        if (PythonToCppFunc toCppFunc = c.first(pyIn))
+            return toCppFunc;
+        if (std::exchange(first, false))
+            Shiboken::failpoint("conversions-mid-walk");
+    }
+    return nullptr;
+}
+#else // Py_GIL_DISABLED
 static inline PythonToCppFunc IsPythonToCppConvertible(const SbkConverter *converter, PyObject *pyIn)
 {
     assert(pyIn);
@@ -412,6 +537,7 @@ static inline PythonToCppFunc IsPythonToCppConvertible(const SbkConverter *conve
     }
     return nullptr;
 }
+#endif // Py_GIL_DISABLED
 
 PythonToCppFunc isPythonToCppValueConvertible(PyTypeObject *type, PyObject *pyIn)
 {
@@ -590,6 +716,9 @@ bool isImplicitConversion(PyTypeObject *type, PythonToCppFunc toCppFunc)
 
 void registerConverterName(SbkConverter *converter, const char *typeName)
 {
+#ifdef Py_GIL_DISABLED
+    ConverterRegistryGuard guard;
+#endif
     auto iter = converters.find(typeName);
     if (iter == converters.end())
         converters.insert(std::make_pair(typeName, converter));
@@ -599,11 +728,15 @@ void registerConverterName(SbkConverter *converter, const char *typeName)
 
 void registerConverterAlias(SbkConverter *converter, const char *typeName)
 {
+#ifdef Py_GIL_DISABLED
+    ConverterRegistryGuard guard;
+#endif
     auto iter = converters.find(typeName);
     if (iter == converters.end())
         converters.insert(std::make_pair(typeName, converter));
 }
 
+#ifndef Py_GIL_DISABLED
 static std::string getRealTypeName(const std::string &typeName)
 {
     auto size = typeName.size();
@@ -611,6 +744,7 @@ static std::string getRealTypeName(const std::string &typeName)
         return typeName.substr(0, size - 1);
     return typeName;
 }
+#endif
 
 // PYSIDE-2404: Build a negative cache of already failed lookups.
 //              The resulting list must be reset after each new import,
@@ -627,6 +761,7 @@ static NonExistingTypeNames &getNonExistingTypeNames()
 // Arbitrary size limit to prevent random name overflows.
 static constexpr std::size_t negativeCacheLimit = 50;
 
+#ifndef Py_GIL_DISABLED
 static void rememberAsNonexistent(const std::string &typeName)
 {
     auto &nonExistingTypeNames = getNonExistingTypeNames();
@@ -635,7 +770,44 @@ static void rememberAsNonexistent(const std::string &typeName)
     converters.insert(std::make_pair(typeName, nullptr));
     nonExistingTypeNames.insert(typeName);
 }
+#endif
 
+#ifdef Py_GIL_DISABLED
+static void clearNegativeLazyCacheLocked();
+
+// Under the lock; std::nullopt for an unknown name.
+static std::optional<SbkConverter *> findConverter(const std::string &typeName)
+{
+    ConverterRegistryGuard guard;
+    auto it = converters.find(typeName);
+    return it != converters.end() ? std::optional<SbkConverter *>(it->second) : std::nullopt;
+}
+
+SbkConverter *getConverter(const char *typeNameC)
+{
+    std::string typeName = typeNameC;
+    // PYSIDE-2404: This can also contain explicit nullptr as a negative cache.
+    if (auto found = findConverter(typeName))
+        return *found;
+    {
+        ConverterRegistryGuard guard;
+        auto it = converters.find(typeName);
+        if (it != converters.end())
+            return it->second;
+        auto &nonExistingTypeNames = getNonExistingTypeNames();
+        if (nonExistingTypeNames.size() > negativeCacheLimit)
+            clearNegativeLazyCacheLocked();
+        converters.insert(std::make_pair(typeName, nullptr));
+        nonExistingTypeNames.insert(typeName);
+    }
+    if (Shiboken::pyVerbose() > 0) {
+        const std::string message =
+            std::string("Can't find type resolver for type '") + typeName + "'.";
+        PyErr_WarnEx(PyExc_RuntimeWarning, message.c_str(), 0);
+    }
+    return nullptr;
+}
+#else // Py_GIL_DISABLED
 SbkConverter *getConverter(const char *typeNameC)
 {
     std::string typeName = typeNameC;
@@ -659,8 +831,19 @@ SbkConverter *getConverter(const char *typeNameC)
     }
     return nullptr;
 }
+#endif // Py_GIL_DISABLED
 
+#ifdef Py_GIL_DISABLED
 void clearNegativeLazyCache()
+{
+    ConverterRegistryGuard guard;
+    clearNegativeLazyCacheLocked();
+}
+
+static void clearNegativeLazyCacheLocked()
+#else
+void clearNegativeLazyCache()
+#endif
 {
     auto &nonExistingTypeNames = getNonExistingTypeNames();
     for (const auto &typeName : nonExistingTypeNames) {
@@ -813,6 +996,13 @@ bool checkDictTypes(PyTypeObject *keyType, PyTypeObject *valueType, PyObject *py
     if (!PyDict_Check(pyIn))
         return false;
 
+#ifdef Py_GIL_DISABLED
+    // A copy: another thread may change the caller's dict.
+    AutoDecRef snapshot(PepDict_IterationSnapshot(pyIn));
+    if (snapshot.isNull())
+        return false;
+    pyIn = snapshot.object();
+#endif
     for (auto [key, value] : PyDictRange(pyIn)) {
         if (!PyObject_TypeCheck(key, keyType))
             return false;
@@ -831,6 +1021,13 @@ bool checkMultiDictTypes(PyTypeObject *keyType, PyTypeObject *valueType,
     if (!PyDict_Check(pyIn))
         return false;
 
+#ifdef Py_GIL_DISABLED
+    // A copy: another thread may change the caller's dict.
+    AutoDecRef snapshot(PepDict_IterationSnapshot(pyIn));
+    if (snapshot.isNull())
+        return false;
+    pyIn = snapshot.object();
+#endif
     for (auto [key, values] : PyDictRange(pyIn)) {
         if (!PyObject_TypeCheck(key, keyType))
             return false;
@@ -854,6 +1051,13 @@ bool convertibleDictTypes(const SbkConverter *keyConverter, bool keyCheckExact, 
     assert(pyIn);
     if (!PyDict_Check(pyIn))
         return false;
+#ifdef Py_GIL_DISABLED
+    // A copy: another thread may change the caller's dict.
+    AutoDecRef snapshot(PepDict_IterationSnapshot(pyIn));
+    if (snapshot.isNull())
+        return false;
+    pyIn = snapshot.object();
+#endif
     for (auto [key, value] : PyDictRange(pyIn)) {
         if (keyCheckExact) {
             if (!PyObject_TypeCheck(key, keyConverter->pythonType))
@@ -880,6 +1084,13 @@ bool convertibleMultiDictTypes(const SbkConverter *keyConverter, bool keyCheckEx
     assert(pyIn);
     if (!PyDict_Check(pyIn))
         return false;
+#ifdef Py_GIL_DISABLED
+    // A copy: another thread may change the caller's dict.
+    AutoDecRef snapshot(PepDict_IterationSnapshot(pyIn));
+    if (snapshot.isNull())
+        return false;
+    pyIn = snapshot.object();
+#endif
     for (auto [key, values] : PyDictRange(pyIn)) {
         if (keyCheckExact) {
             if (!PyObject_TypeCheck(key, keyConverter->pythonType))

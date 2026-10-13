@@ -14,12 +14,72 @@
 #include <sstream>
 #include <iostream>
 #include <vector>
+#ifdef Py_GIL_DISABLED
+#  include "shibokenclasshelpermacros.h"
+#  include <atomic>
+#  include <cstddef>
+#endif
 
 extern "C"
 {
 
 using ToCppConversion = std::pair<IsConvertibleToCppFunc, PythonToCppFunc>;
 using ToCppConversionVector = std::vector<ToCppConversion>;
+
+#ifdef Py_GIL_DISABLED
+} // extern "C"
+
+// Read without a lock
+class ToCppConversionList
+{
+public:
+    struct Sentinel {};
+
+    // Data and size as taken at begin(), like a vector's iterators
+    class Iterator
+    {
+    public:
+        Iterator(const ToCppConversionVector *list, std::size_t index)
+            : m_data(list->data()), m_size(list->size()), m_index(index) {}
+        const ToCppConversion &operator*() const { return m_data[m_index]; }
+        Iterator &operator++() { ++m_index; return *this; }
+        bool operator!=(Sentinel) const { return m_index < m_size; }
+        std::size_t index() const { return m_index; }
+
+    private:
+        const ToCppConversion *m_data;
+        std::size_t m_size;
+        std::size_t m_index;
+    };
+
+    ToCppConversionList();
+    ~ToCppConversionList();
+    LIBSHIBOKEN_DISABLE_COPY(ToCppConversionList)
+
+    Iterator begin() const { return {current(), 0}; }
+    Iterator cbegin() const { return begin(); }
+    Sentinel end() const { return {}; }
+    bool empty() const { return current()->empty(); }
+    std::size_t size() const { return current()->size(); }
+
+    void clear();
+    void emplace_back(const ToCppConversion &conversion);
+    void insert(Iterator pos, const ToCppConversion &conversion);
+
+private:
+    const ToCppConversionVector *current() const
+    {
+        return m_current.load(std::memory_order_acquire);
+    }
+    void publish(ToCppConversionVector *next);
+
+    std::atomic<const ToCppConversionVector *> m_current;
+    std::vector<const ToCppConversionVector *> m_replaced;
+};
+
+extern "C"
+{
+#endif // Py_GIL_DISABLED
 
 /*!
     \internal
@@ -74,7 +134,11 @@ struct SbkConverter
         For Object Types, that never have implicit conversions, this
         list is always empty.
     */
+#ifdef Py_GIL_DISABLED
+    ToCppConversionList toCppConversions;
+#else
     ToCppConversionVector toCppConversions;
+#endif
 };
 
 } // extern "C"

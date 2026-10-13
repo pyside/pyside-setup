@@ -21,6 +21,7 @@
 #include <sbkerrors.h>
 #include <sbkpydictrange.h>
 #include <sbkpytuplerange.h>
+#include <sbktypetupleref.h>
 #include <sbkstaticstrings.h>
 #include <sbkstring.h>
 #include <sbktypefactory.h>
@@ -879,7 +880,8 @@ static PyObject *_getHomonymousMethod(PySideSignalInstance *inst)
     Shiboken::AutoDecRef name(Shiboken::String::fromCString(signalName));
 
     auto *sourceType = inst->d->shared->sourceType;
-    for (PyTypeObject *sub_type : Shiboken::PyTupleTypeRange(sourceType->tp_mro)) {
+    PepMroRef mroRef(sourceType);
+    for (PyTypeObject *sub_type : mroRef) {
         Shiboken::AutoDecRef tpDict(PepType_GetDict(sub_type));
         auto *hom = PyDict_GetItem(tpDict, name);
         if (hom != nullptr && PyCallable_Check(hom) != 0) {
@@ -986,7 +988,8 @@ void updateSourceObject(PyObject *source)
     if (source == nullptr)      // Bad input
        return;
 
-    Shiboken::AutoDecRef mroIterator(PyObject_GetIter(source->ob_type->tp_mro));
+    PepMroRef mroRef(Py_TYPE(source));
+    Shiboken::AutoDecRef mroIterator(PyObject_GetIter(mroRef.object()));
 
     if (mroIterator.isNull())   // Not iterable
        return;
@@ -998,6 +1001,13 @@ void updateSourceObject(PyObject *source)
     while ((mroItem.reset(PyIter_Next(mroIterator))), mroItem.object()) {
         auto *type = reinterpret_cast<PyTypeObject *>(mroItem.object());
         Shiboken::AutoDecRef tpDict(PepType_GetDict(type));
+#ifdef Py_GIL_DISABLED
+        // A copy: another thread may change the class.
+        if (PyObject *snapshot = PepDict_IterationSnapshot(tpDict.object()))
+            tpDict.reset(snapshot);
+        else
+            PyErr_Clear();
+#endif
         for (auto [key, value] : Shiboken::PyDictRange(tpDict.object())) {
             if (PyObject_TypeCheck(value, PySideSignal_TypeF())) {
                 // PYSIDE-1751: We only insert an instance into the instance dict, if a signal

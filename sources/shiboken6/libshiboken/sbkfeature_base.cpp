@@ -22,6 +22,10 @@
 #include <string_view>
 #include <vector>
 
+#ifdef Py_GIL_DISABLED
+#  include "sbkheldlocks.h"
+#endif
+
 using namespace Shiboken;
 
 using StringViewVector = std::vector<std::string_view>;
@@ -91,12 +95,23 @@ void disassembleFrame(const char *marker)
     Shiboken::GilState gil;
 
     Shiboken::Errors::Stash errorStash;
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyObject *> dismoduleOnce;
+    PyObject *dismodule = dismoduleOnce.get([] { return PyImport_ImportModule("dis"); });
+    static Shiboken::OnceValue<PyObject *> discoOnce;
+    PyObject *disco = discoOnce.get([&] { return PyObject_GetAttrString(dismodule, "disco"); });
+    static Shiboken::OnceString _f_lasti("f_lasti");
+    PyObject *const _f_lineno = PyName::f_lineno();
+    PyObject *const _f_code = PyName::f_code();
+    static Shiboken::OnceString _co_filename("co_filename");
+#else
     static PyObject *dismodule = PyImport_ImportModule("dis");
     static PyObject *disco = PyObject_GetAttrString(dismodule, "disco");
     static PyObject *const _f_lasti = Shiboken::String::createStaticString("f_lasti");
     static PyObject *const _f_lineno = Shiboken::String::createStaticString("f_lineno");
     static PyObject *const _f_code = Shiboken::String::createStaticString("f_code");
     static PyObject *const _co_filename = Shiboken::String::createStaticString("co_filename");
+#endif
     AutoDecRef ignore{};
     auto *frame = reinterpret_cast<PyObject *>(PyEval_GetFrame());
     if (frame == nullptr) {
@@ -116,7 +131,12 @@ void disassembleFrame(const char *marker)
     if (auto *exc = errorStash.getException())
         PyErr_DisplayException(exc);
 #endif
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyObject *> stdout_fileOnce;
+    PyObject *stdout_file = stdout_fileOnce.get([] { return PySys_GetObject("stdout"); });
+#else
     static PyObject *stdout_file = PySys_GetObject("stdout");
+#endif
     ignore.reset(PyObject_CallMethod(stdout_file, "flush", nullptr));
 }
 
@@ -166,7 +186,11 @@ static int const CALL_METHOD = 161;
 
 static bool currentOpcode_Is_CallMethNoArgs()
 {
+#ifdef Py_GIL_DISABLED
+    const auto number = _PepRuntimeVersion();
+#else
     static const auto number = _PepRuntimeVersion();
+#endif
     // We look into the currently active operation if we are going to call
     // a method with zero arguments.
     auto *frame = PyEval_GetFrame();
@@ -274,7 +298,12 @@ void initEnumFlagsDict(PyTypeObject *type)
 
 static PyObject *replaceNoArgWithZero(PyObject *callable)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyObject *> partialOnce;
+    PyObject *partial = partialOnce.get(Pep_GetPartialFunction);
+#else
     static auto *partial = Pep_GetPartialFunction();
+#endif
     static auto *zero = PyLong_FromLong(0);
     return PyObject_CallFunctionObjArgs(partial, callable, zero, nullptr);
 }
@@ -293,7 +322,11 @@ static PyObject *lookupUnqualifiedOrOldEnum(PyTypeObject *type, PyObject *name)
     if (std::isalpha(Shiboken::String::toCString(name)[0]) == 0)
         return nullptr;
     PyTypeObject *const EnumMeta = getPyEnumMeta();
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString _member_map_("_member_map_");
+#else
     static PyObject *const _member_map_ = String::createStaticString("_member_map_");
+#endif
     // This is similar to `find_name_in_mro`, but instead of looking directly into
     // tp_dict, we also search for the attribute in local classes of that dict (Part 2).
     PyObject *result{};
@@ -340,6 +373,13 @@ static PyObject *lookupUnqualifiedOrOldEnum(PyTypeObject *type, PyObject *name)
         }
         if (useFakeShortcuts) {
             AutoDecRef tpDict(PepType_GetDict(type_base));
+#ifdef Py_GIL_DISABLED
+            // A copy: another thread may change the class.
+            if (PyObject *snapshot = PepDict_IterationSnapshot(tpDict.object()))
+                tpDict.reset(snapshot);
+            else
+                PyErr_Clear();
+#endif
             auto *dict = tpDict.object();
             for (auto [key, value] : PyDictRange(dict)) {
                 /*
@@ -381,8 +421,13 @@ PyObject *mangled_type_getattro(PyTypeObject *type, PyObject *name)
      * What we change here is the meta class of `QObject`.
      */
     static getattrofunc const type_getattro = PepExt_Type_GetGetAttroSlot(&PyType_Type);
+#ifdef Py_GIL_DISABLED
+    PyObject *const ignAttr1 = PyName::qtStaticMetaObject();
+    PyObject *const ignAttr2 = PyMagicName::get();
+#else
     static PyObject *const ignAttr1 = PyName::qtStaticMetaObject();
     static PyObject *const ignAttr2 = PyMagicName::get();
+#endif
 
     if (SelectFeatureSet != nullptr)
         SelectFeatureSet(type);

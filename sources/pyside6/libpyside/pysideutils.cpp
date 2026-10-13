@@ -262,6 +262,14 @@ static void formatPySequence(PyObject *obj, QDebug &debug)
 
 static void formatPyDict(PyObject *obj, QDebug &debug)
 {
+#ifdef Py_GIL_DISABLED
+    // A copy: another thread may change the dict.
+    Shiboken::AutoDecRef snapshot(PepDict_IterationSnapshot(obj));
+    if (snapshot.isNull())
+        PyErr_Clear();
+    else
+        obj = snapshot.object();
+#endif
     bool first = true;
     debug << '{';
     for (auto [key, value] : Shiboken::PyDictRange(obj)) {

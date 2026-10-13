@@ -10,6 +10,7 @@
 #include <sbkpython.h>
 #include <sbkconverter.h>
 #include <sbkpep.h>
+#include <sbktypetupleref.h>
 
 #include <QtQuick/QQuickPaintedItem>
 #include <QtQuick/QQuickTextDocument>
@@ -21,7 +22,8 @@
 bool pyTypeObjectInheritsFromClass(PyTypeObject *pyObjType, const char *classPtrName)
 {
     PyTypeObject *classPyType = Shiboken::Conversions::getPythonTypeObject(classPtrName);
-    bool isDerived = PySequence_Contains(pyObjType->tp_mro,
+    PepMroRef mroRef(pyObjType);
+    bool isDerived = PySequence_Contains(mroRef.object(),
                                          reinterpret_cast<PyObject *>(classPyType));
     return isDerived;
 }
@@ -49,7 +51,8 @@ bool quickRegisterType(PyObject *pyObj, QQmlPrivate::RegisterTypeAndRevisions *t
     PyTypeObject *pyObjType = reinterpret_cast<PyTypeObject *>(pyObj);
     PyTypeObject *qQuickItemPyType =
             Shiboken::Conversions::getPythonTypeObject("QQuickItem*");
-    bool isQuickItem = PySequence_Contains(pyObjType->tp_mro,
+    PepMroRef mroRef(pyObjType);
+    bool isQuickItem = PySequence_Contains(mroRef.object(),
                                            reinterpret_cast<PyObject *>(qQuickItemPyType));
 
     // Register only classes that inherit QQuickItem or its children.

@@ -600,6 +600,13 @@ void MetaObjectBuilderPrivate::parsePythonType(PyTypeObject *type)
     // notify signals.
     for (PyTypeObject *baseType : basesToCheck) {
         AutoDecRef tpDict(PepType_GetDict(baseType));
+#ifdef Py_GIL_DISABLED
+        // A copy: another thread may change the class.
+        if (PyObject *snapshot = PepDict_IterationSnapshot(tpDict.object()))
+            tpDict.reset(snapshot);
+        else
+            PyErr_Clear();
+#endif
         PyObject *attrs = tpDict.object();
         for (auto [key, value] : PyDictRange(attrs)) {
             if (Signal::checkType(value)) {
@@ -629,6 +636,13 @@ void MetaObjectBuilderPrivate::parsePythonType(PyTypeObject *type)
     // We check for this using "is_sorted()". Sorting no longer happens at all.
     for (PyTypeObject *baseType : basesToCheck) {
         AutoDecRef tpDict(PepType_GetDict(baseType));
+#ifdef Py_GIL_DISABLED
+        // A copy: another thread may change the class.
+        if (PyObject *snapshot = PepDict_IterationSnapshot(tpDict.object()))
+            tpDict.reset(snapshot);
+        else
+            PyErr_Clear();
+#endif
         PyObject *attrs = tpDict.object();
         for (auto [key, value] : PyDictRange(attrs)) {
             if (Property::checkType(value)) {

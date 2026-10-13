@@ -2658,8 +2658,13 @@ void CppGenerator::writeMethodWrapper(TextStream &s, const OverloadData &overloa
         // For custom classes, operations like __radd__ and __rmul__
         // will enter an infinite loop.
         const QString pythonOp = ShibokenGenerator::pythonOperatorFunctionName(rfunc);
-        s << "static PyObject *attrName = Shiboken::PyMagicName::r"
-            << pythonOp.mid(2, pythonOp.size() -4) << "();\n" // Strip __
+        const QString reverseName = pythonOp.mid(2, pythonOp.size() -4); // Strip __
+        s << "#ifdef Py_GIL_DISABLED\n"
+            << "PyObject *attrName = Shiboken::PyMagicName::r" << reverseName << "();\n"
+            << "#else\n"
+            << "static PyObject *attrName = Shiboken::PyMagicName::r"
+            << reverseName << "();\n"
+            << "#endif\n"
             << "if (!isReverse\n" << indent
             << "&& Shiboken::Object::checkType(" << PYTHON_ARG << ")\n"
             << "&& !PyObject_TypeCheck(" << PYTHON_ARG << ", self->ob_type)\n"
@@ -4586,25 +4591,51 @@ void CppGenerator::writeMultipleInheritanceInitializerFunction(TextStream &s,
     s  << "int *\n"
         << multipleInheritanceInitializerFunctionName(metaClass) << "(const void *cptr)\n"
         << "{\n" << indent;
+    // The offsets are a property of the layout: computed once, in a static
+    // initializer, so two threads cannot sort the array at once. The sentinel
+    // stays for the bit-cleared side below.
+    s << "#ifdef Py_GIL_DISABLED\n"
+        << "static int mi_offsets[" << (ancestors.size() + 1) << "] = {-2};\n"
+        << "const auto mi_fill = [cptr]() {\n"
+        << "#else\n";
     s << "static int mi_offsets[] = {-2";
     for (qsizetype i = 0; i < ancestors.size(); i++)
         s << ", 0";
     s << "};\n"
-        << "if (mi_offsets[0] == -2) {\n" << indent
+        << "if (mi_offsets[0] == -2) {\n"
+        << "#endif\n" << indent
         << "const auto *class_ptr = reinterpret_cast<const " << className << " *>(cptr);\n"
         << "const auto base = reinterpret_cast<uintptr_t>(class_ptr);\n"
         << "int *p = mi_offsets;\n";
 
     for (const QString &ancestor : ancestors)
         s << "*p++ = int(" << ancestor << ");\n";
+    s << "#ifdef Py_GIL_DISABLED\n"
+        << "Shiboken::failpoint(\"mi-offsets-mid-fill\");\n"
+        << "#endif\n";
     s << "std::sort(mi_offsets, p);\n"
         << "auto *end = std::unique(mi_offsets, p);\n"
         << "*end++ = -1;\n"
         << "if (mi_offsets[0] == 0)\n"
         << indent
         << "std::memmove(&mi_offsets[0], &mi_offsets[1], (end - mi_offsets  - 1) * sizeof(int));\n"
-        << outdent << outdent
-        << "}\nreturn mi_offsets;\n" << outdent << "}\n";
+        << outdent
+        << "#ifdef Py_GIL_DISABLED\n"
+        << "return true;\n"
+        << outdent << "};\n"
+        << "if (!Shiboken::FreeThreading::optionEnabled("
+           "Shiboken::FreeThreading::Option::MiOffsetsOnce)) {\n" << indent
+        << "// The A/B side: the sentinel check as it was, which two threads\n"
+           "// reaching this type first can pass together.\n"
+        << "if (mi_offsets[0] == -2)\n" << indent
+        << "mi_fill();\n" << outdent
+        << "return mi_offsets;\n" << outdent
+        << "}\n"
+        << "[[maybe_unused]] static const bool mi_ready = mi_fill();\n"
+        << "#else\n"
+        << "}\n"
+        << "#endif\n"
+        << "return mi_offsets;\n" << outdent << "}\n";
 }
 
 void CppGenerator::writeSpecialCastFunction(TextStream &s, const AbstractMetaClassCPtr &metaClass)
@@ -6880,7 +6911,11 @@ bool CppGenerator::finishGeneration()
         QString iName = cppApiVariableName() + "[i].fullName"_L1;
 
         s << "void cleanTypesAttributes() {\n" << indent
+            << "#ifdef Py_GIL_DISABLED\n"
+            << "PyObject *attrName = Shiboken::PyName::qtStaticMetaObject();\n"
+            << "#else\n"
             << "static PyObject *attrName = Shiboken::PyName::qtStaticMetaObject();\n"
+            << "#endif\n"
             << "const int imax = SBK_" << moduleName() << "_IDX_COUNT;\n"
             << "for (int i = 0; i < imax && " << iName << " != nullptr; ++i) {\n" << indent
             << "auto *pyType = reinterpret_cast<PyObject *>(" << iType << ");\n"

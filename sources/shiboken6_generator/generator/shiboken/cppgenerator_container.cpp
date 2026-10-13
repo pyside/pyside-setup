@@ -252,8 +252,13 @@ CppGenerator::OpaqueContainerData
     // _TypeF() function
     const QString typeFName =  result.name + u"_TypeF"_s;
     s << "static PyTypeObject *" << typeFName << "()\n{\n" << indent
+        << "#ifdef Py_GIL_DISABLED\n"
+        << "static Shiboken::OnceValue<PyTypeObject *> type;\n"
+        << "return type.get(" << typeCreationFName << ");\n"
+        << "#else\n"
         << "static PyTypeObject *type = " << typeCreationFName
-        << "();\nreturn type;\n" << outdent << "}\n\n";
+        << "();\nreturn type;\n"
+        << "#endif\n" << outdent << "}\n\n";
 
     // creation functions from C++ references
     ContainerCreationFlags flags;

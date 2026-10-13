@@ -107,6 +107,10 @@ shiboken_get_tool_shell_wrapper(shiboken tool_wrapper)
 
 # The test binding does not need the GIL in a free-threaded build
 list(APPEND GENERATOR_EXTRA_FLAGS --module-uses-gil=auto)
+# Free-threaded builds only
+if(SHIBOKEN_PYTHON_FREE_THREADED)
+    list(APPEND GENERATOR_EXTRA_FLAGS --keywords=py_gil_disabled)
+endif()
 
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mjb_rejected_classes.log"
@@ -210,4 +214,5 @@ if(SHIBOKEN_PYTHON_FREE_THREADED)
     PYSIDE_TEST(override_lookup_error_test.py)
     PYSIDE_TEST(owner_thread_deletion_test.py)
     PYSIDE_TEST(state_lock_test.py)
+    PYSIDE_TEST(type_state_freethreading_test.py)
 endif()

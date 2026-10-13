@@ -11,6 +11,10 @@
 #include <cstring>
 #include <cctype>
 
+#ifdef Py_GIL_DISABLED
+#  include "sbkheldlocks.h"
+#endif
+
 /*!
     \namespace Shiboken::String
 
@@ -51,7 +55,12 @@ bool checkPath(PyObject *path)
         return true;
     // Without the Limited API, we could look up an `__fspath__` class attribute.
     // But we use `isinstance(os.PathLike)`, instead.
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyObject *> PathLikeOnce;
+    PyObject *PathLike = PathLikeOnce.get(initPathLike);
+#else
     static PyObject *PathLike = initPathLike();
+#endif
     return PyObject_IsInstance(path, PathLike);
 }
 

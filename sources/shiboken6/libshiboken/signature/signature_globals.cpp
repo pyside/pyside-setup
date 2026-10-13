@@ -17,6 +17,9 @@
 #include "sbkenum.h"
 
 #include "signature_p.h"
+#ifdef Py_GIL_DISABLED
+#  include "sbkheldlocks.h"
+#endif
 
 #include <cstring>
 
@@ -254,6 +257,19 @@ safe_globals_struc *signatureGlobals()
 void init_shibokensupport_module(void)
 {
     static int init_done = 0;
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceFlag once;
+    // shiboken6's init comes back here: imported first, so the import lock is
+    // always taken before the gate.
+    if (once.pending()
+        && Shiboken::FreeThreading::optionEnabled(Shiboken::FreeThreading::Option::FirstUseOnce)) {
+        PyObject *shiboken = PyImport_ImportModule("shiboken6");
+        if (shiboken == nullptr)
+            PyErr_Clear();  // the init below reports it
+        Py_XDECREF(shiboken);
+    }
+    Shiboken::OnceGate gate(once, [] { return init_done != 0; });
+#endif
 
     if (!init_done) {
         init_done = 1;

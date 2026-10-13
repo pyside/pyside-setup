@@ -6,12 +6,25 @@
 #include "sbkstaticstrings_p.h"
 #include "sbkstring.h"
 
+#ifdef Py_GIL_DISABLED
+#  include "sbkheldlocks.h"
+#endif
+
+#ifdef Py_GIL_DISABLED
+#define STATIC_STRING_IMPL(funcName, value) \
+PyObject *funcName() \
+{ \
+    static Shiboken::OnceString s(value); \
+    return s; \
+}
+#else
 #define STATIC_STRING_IMPL(funcName, value) \
 PyObject *funcName() \
 { \
     static PyObject *const s = Shiboken::String::createStaticString(value); \
     return s; \
 }
+#endif
 
 namespace Shiboken
 {

@@ -522,6 +522,10 @@ LIBSHIBOKEN_API int PepModule_AddType(PyObject *module, PyTypeObject *type);
 
 LIBSHIBOKEN_API int PepModule_Add(PyObject *module, const char *name, PyObject *value);
 
+#ifdef Py_GIL_DISABLED
+LIBSHIBOKEN_API PyObject *PepDict_IterationSnapshot(PyObject *dict);
+#endif
+
 } // extern "C"
 
 #endif // PEP384IMPL_H

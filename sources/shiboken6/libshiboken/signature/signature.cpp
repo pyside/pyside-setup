@@ -31,6 +31,10 @@
 #include <algorithm>
 #include <cstring>
 
+#ifdef Py_GIL_DISABLED
+#  include "sbkheldlocks.h"
+#endif
+
 using namespace Shiboken;
 
 extern "C"
@@ -438,12 +442,23 @@ static PyObject *byteExpand(PyObject *packed)
 {
     const char commonMsg[] = "Please disable compression by passing  --unoptimize=compression";
 
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyObject *> compressModuleOnce;
+    PyObject *compressModule = compressModuleOnce.get([] { return PyImport_ImportModule("zlib"); });
+#else
     static PyObject *compressModule = PyImport_ImportModule("zlib");
+#endif
     if (compressModule == nullptr)
         return PyErr_Format(PyExc_ImportError,
                             "The zlib module cannot be imported. %s", commonMsg);
 
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyObject *> expandFuncOnce;
+    PyObject *expandFunc =
+        expandFuncOnce.get([&] { return PyObject_GetAttrString(compressModule, "decompress"); });
+#else
     static PyObject *expandFunc = PyObject_GetAttrString(compressModule, "decompress");
+#endif
     if (expandFunc == nullptr)
         return PyErr_Format(PyExc_NameError,
                             "The expand function of zlib was not fount. %s", commonMsg);
@@ -563,6 +578,14 @@ static int _finishSignaturesCommon(PyObject *module)
      */
     auto *pyside_globals = signatureGlobals();
     PyObject *obdict = PyModule_GetDict(module);
+#ifdef Py_GIL_DISABLED
+    // A copy: another thread may change the module dict.
+    AutoDecRef snapshot(PepDict_IterationSnapshot(obdict));
+    if (snapshot.isNull())
+        PyErr_Clear();
+    else
+        obdict = snapshot.object();
+#endif
 
     // Here we collect all global functions to finish our mapping.
     for (auto [key, func] : PyDictRange(obdict)) {
@@ -720,9 +743,19 @@ static PyObject *adjustFuncName(const char *func_name)
      * Note that fget is impossible because there are no parameters.
      */
     static const char mapping_name[] = "shibokensupport.signature.mapping";
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyObject *> sys_modulesOnce;
+    PyObject *sys_modules = sys_modulesOnce.get([] { return PySys_GetObject("modules"); });
+    static Shiboken::OnceValue<PyObject *> mappingOnce;
+    PyObject *mapping =
+        mappingOnce.get([&] { return PyDict_GetItemString(sys_modules, mapping_name); });
+    static Shiboken::OnceValue<PyObject *> nsOnce;
+    PyObject *ns = nsOnce.get([&] { return PyModule_GetDict(mapping); });
+#else
     static PyObject *sys_modules = PySys_GetObject("modules");
     static PyObject *mapping = PyDict_GetItemString(sys_modules, mapping_name);
     static PyObject *ns = PyModule_GetDict(mapping);
+#endif
 
     char _path[200 + 1] = {};
     const char *_name = std::strrchr(func_name, '.');

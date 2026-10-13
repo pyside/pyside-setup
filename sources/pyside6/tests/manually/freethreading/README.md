@@ -23,4 +23,5 @@ armed before, and which point a thread was parked at.
 
 A `proof-<name>` entry calls `counterproof(bit, test, expect)`: the test has
 to pass with every bit set, and fail on the defect `expect` names when `bit`
-is cleared through `PYSIDE6_OPTION_FT`. Any other failure does not count.
+is cleared through `PYSIDE6_OPTION_FT`; a set names the forms a defect may take.
+Any other failure does not count.

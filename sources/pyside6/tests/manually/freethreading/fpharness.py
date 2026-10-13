@@ -156,13 +156,15 @@ def _verdict(out: str) -> str:
     return lines[-1].strip() if lines else ""
 
 
-def defect_shown(expect: str, rc: int, out: str) -> bool:
+def defect_shown(expect: str | set[str], rc: int, out: str) -> bool:
     """Whether a failed run failed on the defect `expect` names.
 
     "crash" means killed by a signal, "hang" means it did not return; any
     other text has to appear in the output. Any other failure is not the
-    defect.
+    defect. A set of markers counts when one of them shows.
     """
+    if not isinstance(expect, str):
+        return any(defect_shown(e, rc, out) for e in expect)
     if expect == "crash":
         return rc < 0
     if expect == "hang":
@@ -170,13 +172,14 @@ def defect_shown(expect: str, rc: int, out: str) -> bool:
     return rc not in (0, SKIP) and expect in out
 
 
-def counterproof(option: str, test: str, expect: str, context: str = "",
-                 gil_expect: str = "") -> str:
+def counterproof(option: str, test: str, expect: str | set[str],
+                 context: str = "", gil_expect: str = "") -> str:
     """The test passes with `option` and fails on its defect without it.
 
-    `expect` names the defect (see defect_shown()), `gil_expect` the defect as
-    it shows with the GIL enabled, where that differs. `context` names a bit
-    cleared in both runs, for measures that hide each other.
+    `expect` names the defect, or a set of the forms it takes (see
+    defect_shown()), `gil_expect` the defect as it shows with the GIL
+    enabled, where that differs. `context` names a bit cleared in both
+    runs, for measures that hide each other.
     """
     if not FREE_THREADED:
         return "skipped: the option bits exist only in a free-threaded build"
@@ -198,10 +201,11 @@ def counterproof(option: str, test: str, expect: str, context: str = "",
             # The GIL serializes the threads the defect needs
             return f"skipped: the GIL hides the defect ({test} passes without {without})"
         return f"FAIL: {test} still passes without {without}"
+    shown = expect if isinstance(expect, str) else " or ".join(sorted(expect))
     if not defect_shown(expect, rc, out):
-        return (f"FAIL: {test} fails without {without}, but not on {expect!r}: "
+        return (f"FAIL: {test} fails without {without}, but not on {shown!r}: "
                 f"rc {rc}, {_verdict(out)[:60]}")
-    return f"ok ({test} shows {expect!r} without {without})"
+    return f"ok ({test} shows {shown!r} without {without})"
 
 
 # ------------------------------------------------------------------- driver

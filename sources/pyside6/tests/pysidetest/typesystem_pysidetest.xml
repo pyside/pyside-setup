@@ -79,4 +79,22 @@
     <smart-pointer-type name="QSharedPointer" type="shared" getter="data"
                         reset-method="reset"/>
 
+    <?if py_gil_disabled?>
+    <!-- The dict formatters of libshiboken and libpyside, for a test with a dict that changes -->
+    <inject-code class="native" position="beginning">
+    #include &lt;helper.h&gt;
+    #include &lt;pysideutils.h&gt;
+    #include &lt;QtCore/QDebug&gt;
+    #include &lt;sstream&gt;
+    </inject-code>
+    <add-function signature="formatDictForTest(PyObject*)" return-type="void">
+        <inject-code class="target" position="beginning">
+        std::ostringstream shibokenText;
+        shibokenText &lt;&lt; Shiboken::debugPyObject(%PYARG_1);
+        QString pysideText;
+        QDebug(&amp;pysideText) &lt;&lt; PySide::debugPyObject(%PYARG_1);
+        </inject-code>
+    </add-function>
+    <?endif?>
+
 </typesystem>

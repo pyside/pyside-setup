@@ -44,7 +44,8 @@ LIBSHIBOKEN_API void resolveLazyClasses(PyObject *module);
 /*!
     Imports and returns the module named \a moduleName, or a nullptr in case
     of failure. If the module is already imported, it increments its reference
-    count before returning it.
+    count before returning it. On free-threaded builds, it waits while another
+    thread runs the module's exec.
 */
 LIBSHIBOKEN_API PyObject *import(const char *moduleName);
 
@@ -104,9 +105,11 @@ LIBSHIBOKEN_API SbkConverter **getTypeConverters(PyObject *module);
 
 /*!
     Replaces the dictionary of \a module by \a dict, changing its class to
-    \a modClass. This allows for using \c __missing__.
+    \a modClass. This allows for using \c __missing__. A free-threaded build
+    leaves the module as it is.
 
-    Returns true on success, false if the arguments are of the wrong type.
+    Returns true on success, false if the arguments are of the wrong type or
+    nothing was replaced.
 */
 LIBSHIBOKEN_API bool replaceModuleDict(PyObject *module, PyObject *modClass, PyObject *dict);
 

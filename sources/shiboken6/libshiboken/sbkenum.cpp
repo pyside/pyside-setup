@@ -5,7 +5,7 @@
 #include "sbkenum.h"
 #include "sbkenum_p.h"
 #include "sbkpep.h"
-#include "sbkpytuplerange.h"
+#include "sbktypetupleref.h"
 #include "sbkstring.h"
 #include "helper.h"
 #include "sbkstaticstrings.h"
@@ -17,6 +17,10 @@
 
 #include <cstring>
 #include <iostream>
+
+#ifdef Py_GIL_DISABLED
+#  include "sbkheldlocks.h"
+#endif
 
 using namespace Shiboken;
 
@@ -132,8 +136,9 @@ int enumIsFlag(PyObject *ob_type)
     auto *metatype = Py_TYPE(ob_type);
     if (metatype != globals->PyEnumMeta)
         return -1;
-    const Shiboken::PyTupleRange mro(reinterpret_cast<PyTypeObject *>(ob_type)->tp_mro);
-    return std::find(mro.begin(), mro.end(), globals->PyFlag) != mro.end() ? 1 : 0;
+    const PepMroRef mro(reinterpret_cast<PyTypeObject *>(ob_type));
+    auto *flagType = reinterpret_cast<PyTypeObject *>(globals->PyFlag);
+    return std::find(mro.begin(), mro.end(), flagType) != mro.end() ? 1 : 0;
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -162,10 +167,17 @@ static PyObject *missing_func(PyObject * /* self */ , PyObject *args)
 {
     // In order to relax matters to be more compatible with C++, we need
     // to create a pseudo-member with that value.
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString _sbk_missing("_sbk_missing_");
+    PyObject *const _name = Shiboken::PyMagicName::name();
+    PyObject *const _mro = Shiboken::PyMagicName::mro();
+    PyObject *const _class = Shiboken::PyMagicName::class_();
+#else
     static auto *const _sbk_missing = Shiboken::String::createStaticString("_sbk_missing_");
     static auto *const _name = Shiboken::String::createStaticString("__name__");
     static auto *const _mro = Shiboken::String::createStaticString("__mro__");
     static auto *const _class = Shiboken::String::createStaticString("__class__");
+#endif
 
     PyObject *klass{};
     PyObject *value{};
@@ -225,11 +237,22 @@ static PyObject *create_missing_func(PyObject *klass)
 {
     // When creating the class, memorize it in the missing function by
     // a partial function argument.
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *const type = typeOnce.get([] { return SbkType_FromSpec(&dummy_spec); });
+    auto *const obType = reinterpret_cast<PyObject *>(type);
+    static Shiboken::OnceString _missing("_missing_");
+    static Shiboken::OnceValue<PyObject *> funcOnce;
+    PyObject *const func = funcOnce.get([&] { return PyObject_GetAttr(obType, _missing); });
+    static Shiboken::OnceValue<PyObject *> partialOnce;
+    PyObject *const partial = partialOnce.get(Pep_GetPartialFunction);
+#else
     static auto *const type = SbkType_FromSpec(&dummy_spec);
     static auto *const obType = reinterpret_cast<PyObject *>(type);
     static auto *const _missing = Shiboken::String::createStaticString("_missing_");
     static auto *const func = PyObject_GetAttr(obType, _missing);
     static auto *const partial = Pep_GetPartialFunction();
+#endif
     return PyObject_CallFunctionObjArgs(partial, func, klass, nullptr);
 }
 //
@@ -285,7 +308,11 @@ PyObject *newItem(PyTypeObject *enumType, EnumValueType itemValue,
     if (!itemName)
         return PyObject_CallFunction(obEnumType, "L", itemValue);
 
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString _member_map_("_member_map_");
+#else
     static PyObject *const _member_map_ = String::createStaticString("_member_map_");
+#endif
     AutoDecRef tpDict(PepType_GetDict(enumType));
     auto *member_map = PyDict_GetItem(tpDict.object(), _member_map_);
     if (!(member_map && PyDict_Check(member_map)))
@@ -368,7 +395,11 @@ EnumContext createEnumContext(PyObject *scopeOrModule, const char *fullName)
     result.name.reset(Shiboken::String::fromCString(result.nameC));
 
     // A module-scope enum has no entry in a type's enumTypeDict: it is an IntEnum.
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString intEnumName("IntEnum");
+#else
     static PyObject *const intEnumName = String::createStaticString("IntEnum");
+#endif
     PyObject *enumName = intEnumName;
     if (PyType_Check(scopeOrModule)) {
         // For global objects, we have no good solution, yet where to put the int info.
@@ -410,7 +441,11 @@ static PyTypeObject *createEnumForPython(const EnumContext &enumContext,
     // See  QDir.Filter.Drives | QDir.Filter.Files
     AutoDecRef callArgs(Py_BuildValue("(OO)", enumContext.name.object(), pyEnumItems));
     AutoDecRef callDict(PyDict_New());
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString boundary("boundary");
+#else
     static PyObject *boundary = String::createStaticString("boundary");
+#endif
     if (globals->PyFlag_KEEP)
         PyDict_SetItem(callDict, boundary, globals->PyFlag_KEEP);
     auto *obNewType = PyObject_Call(enumContext.PyEnumType.object(), callArgs, callDict);

@@ -12,6 +12,10 @@
 
 #include <algorithm>
 
+#ifdef Py_GIL_DISABLED
+#  include "sbkheldlocks.h"
+#endif
+
 namespace Shiboken {
 
 static const ArgumentNameIndexMapping *
@@ -144,15 +148,24 @@ static bool isCompiledHelper()
     globals.reset(nullptr);
 
     // __compiled__ may not be set in initialization phases, check builtins
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString nuitkaDir("__nuitka_binary_exe");
+#else
     static PyObject *nuitkaDir = Shiboken::String::createStaticString("__nuitka_binary_exe");
+#endif
     Shiboken::AutoDecRef builtins(PepEval_GetFrameBuiltins());
     return !builtins.isNull() && PyDict_GetItem(builtins.object(), nuitkaDir) != nullptr;
 }
 
 bool isCompiled()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<const bool *> result;
+    return *result.get([] { return new bool(isCompiledHelper()); });
+#else
     static const bool result = isCompiledHelper();
     return result;
+#endif
 }
 
 } // namespace Shiboken

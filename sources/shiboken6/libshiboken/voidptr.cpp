@@ -9,6 +9,10 @@
 #include "basewrapper_p.h"
 #include "sbktypefactory.h"
 
+#ifdef Py_GIL_DISABLED
+#  include "sbkheldlocks.h"
+#endif
+
 extern "C"
 {
 
@@ -291,7 +295,12 @@ static PyTypeObject *createVoidPtrType()
 
 PyTypeObject *SbkVoidPtr_TypeF(void)
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<PyTypeObject *> typeOnce;
+    PyTypeObject *type = typeOnce.get(createVoidPtrType);
+#else
     static auto *type = createVoidPtrType();
+#endif
     return type;
 }
 

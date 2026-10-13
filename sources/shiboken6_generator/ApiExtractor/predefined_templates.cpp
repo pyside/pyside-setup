@@ -86,7 +86,12 @@ static QString pyDictToCppMap(bool isQMap)
 PyObject *value{};
 %out.clear();
 Py_ssize_t pos = 0;
+#ifdef Py_GIL_DISABLED
+Shiboken::AutoDecRef dictItems(PepDict_IterationSnapshot(%in));
+while (!dictItems.isNull() && PyDict_Next(dictItems.object(), &pos, &key, &value)) {
+#else
 while (PyDict_Next(%in, &pos, &key, &value)) {
+#endif
     %OUTTYPE_0 cppKey = %CONVERTTOCPP[%OUTTYPE_0](key);
     %OUTTYPE_1 cppValue = %CONVERTTOCPP[%OUTTYPE_1](value);
     %out.insert()"_s
@@ -153,7 +158,12 @@ static QString pyDictToCppMultiHash(bool isQMultiHash)
     PyObject *values{};
     %out.clear();
     Py_ssize_t pos = 0;
+#ifdef Py_GIL_DISABLED
+    Shiboken::AutoDecRef dictItems(PepDict_IterationSnapshot(%in));
+    while (!dictItems.isNull() && PyDict_Next(dictItems.object(), &pos, &key, &values)) {
+#else
     while (PyDict_Next(%in, &pos, &key, &values)) {
+#endif
         %OUTTYPE_0 cppKey = %CONVERTTOCPP[%OUTTYPE_0](key);
         const Py_ssize_t size = PySequence_Size(values);
         for (Py_ssize_t i = 0; i < size; ++i) {

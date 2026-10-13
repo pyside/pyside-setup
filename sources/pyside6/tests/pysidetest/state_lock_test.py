@@ -50,11 +50,11 @@ class StateLockTest(unittest.TestCase):
 HAS_HOOKS = hasattr(Shiboken, "armFailpoint")
 
 
-def run_child(test, option, broken):
+def run_child(test, option, broken, env=None):
     '''Run this file with `option` in a fresh process, expect "result ok".'''
     try:
         proc = subprocess.run([sys.executable, __file__, option],
-                              capture_output=True, text=True, timeout=10)
+                              capture_output=True, text=True, timeout=10, env=env)
     except subprocess.TimeoutExpired as e:
         test.fail(f"{broken}: the run hangs\n{child_tail(e.stderr)}")
     test.assertEqual(proc.returncode, 0,
@@ -180,8 +180,8 @@ class WrapperLifetimeTest(unittest.TestCase):
         if HAS_HOOKS:
             Shiboken.clearFailpoints()
 
-    def child(self, option, broken):
-        run_child(self, option, broken)
+    def child(self, option, broken, env=None):
+        run_child(self, option, broken, env)
 
     def testClassWithOtherCppBases(self):
         '''__class__ assignment to other C++ bases is refused.'''
@@ -211,6 +211,68 @@ class WrapperLifetimeTest(unittest.TestCase):
     def testInvalidateListChanged(self):
         '''An object dropped from a list during invalidate() is not walked freed.'''
         self.child("--invalidate-list", "invalidate walked a freed object")
+
+    @unittest.skipUnless(HAS_HOOKS, "needs the failpoint hooks of a debug build")
+    def testMainThreadQueueGrowsWhileItRuns(self):
+        '''Widgets queued for the main thread during its run are deleted once each.'''
+        self.child("--main-queue", "the main-thread queue changed while it ran",
+                   dict(os.environ, MallocScribble="1", QT_QPA_PLATFORM="offscreen"))
+
+
+def _main_queue():
+    import functools
+    import weakref
+    from PySide6.QtWidgets import QApplication, QWidget
+    app = QApplication([])      # noqa: F841
+    gc.disable()
+    # Made in main, freed by gc in a worker: each widget is in a cycle with itself
+    first = [QWidget() for _ in range(4)]
+    second = [QWidget() for _ in range(200)]
+    deleted = [0] * 204         # C++ deletions per widget
+
+    def count(index):
+        deleted[index] += 1
+
+    for index, widget in enumerate(first + second):
+        widget.me = widget
+        widget.destroyed.connect(functools.partial(count, index))
+    del widget
+    gone = [weakref.ref(widget) for widget in second]
+    done = threading.Event()
+    trigger = {}
+
+    def collect(batch):
+        batch.clear()
+        gc.collect()
+
+    def control():
+        # The main thread runs the queue at its next eval breaker
+        try:
+            trigger["parked"] = wait_reached("main-delete-mid-run")
+            dropper = threading.Thread(target=collect, args=(second,))     # queues 200 more
+            dropper.start()
+            dropper.join()
+            trigger["queued"] = sum(ref() is None for ref in gone)
+            trigger["still parked"] = Shiboken.failpointReached("main-delete-mid-run")
+        finally:
+            Shiboken.releaseFailpoint("main-delete-mid-run")
+            done.set()
+
+    assert Shiboken.armFailpoint("main-delete-mid-run")
+    # The controller first: the main thread may run the queue while it waits
+    threading.Thread(target=control).start()
+    threading.Thread(target=collect, args=(first,)).start()          # queues 4
+    while not done.is_set():   # the main thread runs pending calls between bytecodes
+        time.sleep(0.001)
+    end = time.monotonic() + 2.0
+    while sum(deleted) < len(deleted) and time.monotonic() < end:     # the rest of the queue
+        time.sleep(0.005)
+    # The 200 were queued while main was parked in the run; each deleted once
+    fired = trigger == {"parked": True, "queued": 200, "still parked": True}
+    once = deleted == [1] * len(deleted)
+    wrong = {i: n for i, n in enumerate(deleted) if n != 1}
+    print(f"result {'ok' if fired and once else (trigger, len(wrong), list(wrong.items())[:5])}",
+          flush=True)
 
 
 def _class_assign():
@@ -451,6 +513,9 @@ def _stress(rounds=200, parents=8, kids=40):
 
 
 if __name__ == '__main__':
+    if "--main-queue" in sys.argv:
+        _main_queue()
+        sys.exit(0)
     if "--class-assign" in sys.argv:
         _class_assign()
         sys.exit(0)

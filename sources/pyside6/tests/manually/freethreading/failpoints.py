@@ -37,7 +37,9 @@ def test_defect_match() -> str:
     cases = [("crash", -11, "", True), ("crash", 1, "FAIL: x", False),
              ("hang", 124, "", True), ("hang", -6, "", False),
              ("x", 1, "FAIL: x", True), ("x", 1, "FAIL: y", False),
-             ("x", 0, "x", False), ("x", 77, "skipped: x", False)]
+             ("x", 0, "x", False), ("x", 77, "skipped: x", False),
+             ({"x", "y"}, 1, "FAIL: y", True), ({"x", "y"}, 1, "FAIL: z", False),
+             ({"x", "crash"}, -11, "", True), ({"x", "y"}, 0, "x y", False)]
     wrong = [c for c in cases if defect_shown(*c[:3]) != c[3]]
     return f"FAIL: {wrong}" if wrong else "ok"
 
@@ -85,7 +87,8 @@ def run_unittest(path, *names: str) -> str:
         return f"FAIL: crashed (signal {-proc.returncode})"
     # Each failed method by name, with the message its assertion carries.
     failures = re.findall(r"^FAIL: (\w+)", proc.stderr, re.MULTILINE)
-    messages = sorted(set(re.findall(r" : (.+)$", proc.stderr, re.MULTILINE)))
+    messages = sorted(set(re.findall(r" : (.+)$", proc.stderr, re.MULTILINE))
+                      | set(re.findall(r"^AssertionError: (.+)$", proc.stderr, re.MULTILINE)))
     return f"FAIL: {', '.join(failures) or proc.stderr[-200:]}: {'; '.join(messages)}"
 
 
@@ -165,6 +168,157 @@ def test_lookup_meets_dying_wrapper() -> str:
                         "WrapperFreeThreadedTest.testLookupMeetsDyingWrapper")
 
 
+def run_type_state(method: str) -> str:
+    """One method of pysidetest/type_state_freethreading_test.py."""
+    return run_unittest(TESTS_DIR / "pysidetest" / "type_state_freethreading_test.py",
+                        f"TypeStateFreeThreadedTest.{method}")
+
+
+def test_hierarchy_snapshot() -> str:
+    """A hierarchy walk sees one graph during an import."""
+    return run_type_state("testHierarchyWalkSeesOneGraph")
+
+
+def test_doc_per_thread() -> str:
+    """A help text does not change another thread's __doc__."""
+    return run_type_state("testDocPerThread")
+
+
+def test_post_routines() -> str:
+    """Post routines from several threads all run."""
+    return run_type_state("testPostRoutinesFromThreads")
+
+
+def test_dict_snapshot() -> str:
+    """A dict changed during its conversion does not crash."""
+    return run_type_state("testDictChangedDuringConversion")
+
+
+def test_dict_metaobject_build() -> str:
+    """A mixin changed while a subclass parses its dict."""
+    return run_type_state("testBaseClassChangedDuringMetaObjectBuild")
+
+
+def test_dict_qobject_init() -> str:
+    """A class changed while an instance looks for signals."""
+    return run_type_state("testClassChangedDuringQObjectInit")
+
+
+def test_dict_enum_shortcut() -> str:
+    """A class changed during a search for an old enum name."""
+    return run_type_state("testClassChangedDuringEnumShortcutLookup")
+
+
+def test_dict_classinfo() -> str:
+    """A dict given to ClassInfo and changed meanwhile."""
+    return run_type_state("testClassInfoDictChanged")
+
+
+def test_dict_debug_format() -> str:
+    """The debug formatters of a dict another thread changes."""
+    return run_type_state("testDebugFormatOfChangingDict")
+
+
+def test_dict_module_signatures() -> str:
+    """A module dict changed while its signatures finish."""
+    return run_type_state("testModuleDictChangedDuringSignatures")
+
+
+def test_converter_registry() -> str:
+    """Converter names added during imports are found."""
+    return run_type_state("testConverterNamesDuringImport")
+
+
+def test_conversion_list() -> str:
+    """A conversion walk keeps its list during an import."""
+    return run_type_state("testConversionsExtendedDuringImport")
+
+
+def test_module_registry() -> str:
+    """Module execs at once while names are looked up."""
+    return run_type_state("testParallelModuleExecs")
+
+
+def test_qenum_classes() -> str:
+    """QEnum classes in several threads get their own enums."""
+    return run_type_state("testQEnumClassesFromThreads")
+
+
+def test_stream_helper() -> str:
+    """First QDataStream reads in two threads make one helper."""
+    return run_type_state("testFirstStreamFromTwoThreads")
+
+
+def test_module_dir() -> str:
+    """dir() of a module in its exec does not meet a missing table."""
+    return run_type_state("testDirDuringModuleExec")
+
+
+def test_import_waits() -> str:
+    """An import waits for an exec in another thread."""
+    return run_type_state("testImportWaitsForModuleExec")
+
+
+def test_two_bindings() -> str:
+    """First imports of two bindings initialize libshiboken once."""
+    return run_type_state("testFirstImportsOfTwoBindings")
+
+
+def test_module_dict() -> str:
+    """A module seen during replaceModuleDict() keeps dict and class."""
+    return run_type_state("testModuleSeenWhileItsDictIsReplaced")
+
+
+def test_generic_enum() -> str:
+    """QEnum enums appended from several threads: none is lost."""
+    return run_type_state("testGenericEnumAppendsFromThreads")
+
+
+def test_wrapper_walk() -> str:
+    """A walk holds a wrapper another thread drops."""
+    return run_unittest(SAMPLE_DIR / "wrapper_freethreading.py",
+                        "WrapperFreeThreadedTest.testWalkWhileAWrapperGoes")
+
+
+def test_wrapper_dump() -> str:
+    """dumpWrapperMap() while wrappers go reads no freed node."""
+    if gil_enabled():
+        return ("skipped: the failpoint parks inside a raw lock, which must not "
+                "detach; with the GIL enabled the second thread cannot run")
+    return run_unittest(SAMPLE_DIR / "wrapper_freethreading.py",
+                        "WrapperFreeThreadedTest.testDumpWhileWrappersGo")
+
+
+def test_main_queue() -> str:
+    """Widgets queued during the main thread run are deleted once."""
+    return run_unittest(TESTS_DIR / "pysidetest" / "state_lock_test.py",
+                        "WrapperLifetimeTest.testMainThreadQueueGrowsWhileItRuns")
+
+
+def test_mi_offsets() -> str:
+    """First objects with two C++ bases get correct offsets."""
+    if gil_enabled():
+        return ("skipped: the failpoint parks inside a C++ static initializer, "
+                "which cannot detach; without a failpoint no Python runs there")
+    return run_unittest(SAMPLE_DIR / "wrapper_freethreading.py",
+                        "WrapperFreeThreadedTest.testFirstMultipleInheritanceFromTwoThreads")
+
+
+def test_metatype_hash() -> str:
+    """Metatypes read during a QML registration keep their meta objects."""
+    return run_type_state("testMetaTypeReadDuringRegistration")
+
+
+def test_mro_snapshot() -> str:
+    """__bases__ assigned during an override lookup: the walk stays valid."""
+    return run_type_state("testMroWalkSurvivesBasesSwap")
+
+
+def test_bases_snapshot() -> str:
+    """__bases__ assigned during a property lookup: the walk stays valid."""
+    return run_type_state("testBasesWalkSurvivesBasesSwap")
+
+
 def test_one_wrapper_per_address() -> str:
     """Two threads converting one C++ object get one wrapper."""
     if gil_enabled():
@@ -229,6 +383,88 @@ TESTS = {
     "one-wrapper-per-address": Test(test_one_wrapper_per_address),
     "proof-one-wrapper-per-address": Test(lambda: counterproof(
         "OneWrapperPerAddress", "one-wrapper-per-address", "one C++ object got two wrappers")),
+    "hierarchy-snapshot": Test(test_hierarchy_snapshot),
+    "proof-hierarchy-snapshot": Test(lambda: counterproof(
+        "ClassHierarchySnapshot", "hierarchy-snapshot", "the walk saw two graphs")),
+    "doc-per-thread": Test(test_doc_per_thread),
+    "proof-doc-per-thread": Test(lambda: counterproof(
+        "DocRecursionPerThread", "doc-per-thread", "__doc__ came from the raw descriptor")),
+    "post-routines": Test(test_post_routines),
+    "proof-post-routines": Test(lambda: counterproof(
+        "PostRoutineBatch", "post-routines", "post routines lost")),
+    "dict-snapshot": Test(test_dict_snapshot),
+    # The freed list crashes, or is read as a shorter one: an IndexError
+    "proof-dict-snapshot": Test(lambda: counterproof(
+        "DictIterationSnapshot", "dict-snapshot", {"crashed", "IndexError"})),
+    "dict-metaobject-build": Test(test_dict_metaobject_build),
+    "proof-dict-metaobject-build": Test(lambda: counterproof(
+        "DictIterationSnapshot", "dict-metaobject-build", {"crash", "crashed"})),
+    "dict-qobject-init": Test(test_dict_qobject_init),
+    "proof-dict-qobject-init": Test(lambda: counterproof(
+        "DictIterationSnapshot", "dict-qobject-init", {"crash", "crashed"})),
+    "dict-enum-shortcut": Test(test_dict_enum_shortcut),
+    "proof-dict-enum-shortcut": Test(lambda: counterproof(
+        "DictIterationSnapshot", "dict-enum-shortcut", {"crash", "crashed"})),
+    "dict-classinfo": Test(test_dict_classinfo),
+    "proof-dict-classinfo": Test(lambda: counterproof(
+        "DictIterationSnapshot", "dict-classinfo", {"crash", "crashed"})),
+    "dict-debug-format": Test(test_dict_debug_format),
+    "proof-dict-debug-format": Test(lambda: counterproof(
+        "DictIterationSnapshot", "dict-debug-format", {"crash", "crashed"})),
+    "dict-module-signatures": Test(test_dict_module_signatures),
+    "proof-dict-module-signatures": Test(lambda: counterproof(
+        "DictIterationSnapshot", "dict-module-signatures", {"crash", "crashed"})),
+    "converter-registry": Test(test_converter_registry),
+    "proof-converter-registry": Test(lambda: counterproof(
+        "ConverterRegistryLock", "converter-registry", "the converter registry broke")),
+    "conversion-list": Test(test_conversion_list),
+    "proof-conversion-list": Test(lambda: counterproof(
+        "ConverterRegistryLock", "conversion-list", "a conversion walk lost its list")),
+    "module-registry": Test(test_module_registry),
+    "module-dir": Test(test_module_dir),
+    "proof-module-dir": Test(lambda: counterproof(
+        "ModuleDirDefault", "module-dir", "dir() met a module before its tables")),
+    "import-waits": Test(test_import_waits),
+    "two-bindings": Test(test_two_bindings),
+    "proof-two-bindings": Test(lambda: counterproof(
+        "FirstUseOnce", "two-bindings", "two first imports hung")),
+    "proof-import-waits": Test(lambda: counterproof(
+        "ModuleImportWaits", "import-waits", "a module was taken half initialized")),
+    "module-dict": Test(test_module_dict),
+    "proof-module-dict": Test(lambda: counterproof(
+        "ModuleDictKept", "module-dict", "a module was seen between the two stores")),
+    "qenum-classes": Test(test_qenum_classes),
+    "proof-qenum-collector": Test(lambda: counterproof(
+        "QEnumCollectorPerThread", "qenum-classes", "the QEnum registration broke")),
+    "proof-enum-private": Test(lambda: counterproof(
+        "EnumPrivateLock", "qenum-classes", "the QEnum registration broke")),
+    "generic-enum": Test(test_generic_enum),
+    "wrapper-walk": Test(test_wrapper_walk),
+    "proof-wrapper-walk": Test(lambda: counterproof(
+        "WrapperWalkOwned", "wrapper-walk", "the walk took a wrapper that was gone")),
+    "wrapper-dump": Test(test_wrapper_dump),
+    "proof-wrapper-dump": Test(lambda: counterproof(
+        "WrapperDumpLocked", "wrapper-dump", "the wrapper map changed under its dump")),
+    "main-queue": Test(test_main_queue),
+    "proof-main-queue": Test(lambda: counterproof(
+        "MainThreadQueueLock", "main-queue", "the main-thread queue changed while it ran")),
+    "mi-offsets": Test(test_mi_offsets),
+    "proof-mi-offsets": Test(lambda: counterproof(
+        "MiOffsetsOnce", "mi-offsets", "the base offsets were read half computed")),
+    "proof-generic-enum": Test(lambda: counterproof(
+        "GenericEnumRegistryLock", "generic-enum", "the generic enum registry lost an append")),
+    "stream-helper": Test(test_stream_helper),
+    "proof-stream-helper": Test(lambda: counterproof(
+        "StreamHelperOnce", "stream-helper", "two stream helpers")),
+    "metatype-hash": Test(test_metatype_hash),
+    "proof-metatype-hash": Test(lambda: counterproof(
+        "QObjectMetaTypeRecords", "metatype-hash", "a metatype lost its meta object")),
+    "mro-snapshot": Test(test_mro_snapshot),
+    "proof-mro-snapshot": Test(lambda: counterproof(
+        "MroSnapshot", "mro-snapshot", "the walk left the mro it started on")),
+    "bases-snapshot": Test(test_bases_snapshot),
+    "proof-bases-snapshot": Test(lambda: counterproof(
+        "MroSnapshot", "bases-snapshot", "the walk left the bases it started on")),
 }
 
 

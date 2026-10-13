@@ -14,6 +14,7 @@
 #include <sbkpep.h>
 #include <sbkstring.h>
 #include <sbktypefactory.h>
+#include <sbktypetupleref.h>
 
 #include <pysideproperty.h>
 #include <pysidepropertybase_p.h>
@@ -169,7 +170,8 @@ static int propListTpInit(PyObject *self, PyObject *args, PyObject *kwds)
     PyTypeObject *qobjectType = PySide::qObjectType();
 
     auto *elementType = reinterpret_cast<PyTypeObject *>(data->obElementType);
-    if (!PySequence_Contains(elementType->tp_mro, reinterpret_cast<PyObject *>(qobjectType))) {
+    PepMroRef elementMro(elementType);
+    if (!PySequence_Contains(elementMro.object(), reinterpret_cast<PyObject *>(qobjectType))) {
         PyErr_Format(PyExc_TypeError, "A type inherited from %s expected, got %s.",
                      qobjectType->tp_name, elementType->tp_name);
         return -1;

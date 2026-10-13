@@ -72,6 +72,72 @@ namespace Shiboken::FreeThreading {
            A generated function works on a private copy of a list, dict or
            set container argument: another thread may change it during the
            call.
+    \value ClassHierarchySnapshot
+           A module import publishes its inheritance edges as a new
+           snapshot: conversions walk the graph meanwhile.
+    \value MiOffsetsOnce
+           The multiple-inheritance offsets are computed once: two threads
+           would fill them both.
+    \value DocRecursionPerThread
+           The recursion guard of \c __doc__ is per thread.
+    \value PostRoutineBatch
+           qAddPostRoutine() appends under a lock, and the routines run
+           from a batch taken out under it.
+    \value DictIterationSnapshot
+           A conversion iterates a copy of a dict passed in, which another
+           thread may change.
+    \value QObjectMetaTypeRecords
+           The QObject-pointer metatype hash is used under a lock: Qt reads it
+           from any thread while QML registers.
+    \value MroSnapshot
+           A walk over a type's \c __mro__ or \c __bases__ owns the tuple,
+           which a \c __bases__ assignment frees.
+    \value ConverterRegistryLock
+           The converter registry is used under a lock, and conversion lists
+           are replaced as a whole: imports add both while others use them.
+    \value ModuleRegistryLock
+           The module tables are used under a lock: module execs run at once.
+    \value ModuleImportWaits
+           A module another one needs is imported through importlib, which
+           waits for its exec in another thread.
+    \value FirstUseOnce
+           The one-time initializations run in one thread; others wait
+           detached.
+    \value ModuleDirDefault
+           A module has no __dir__ of its own: another thread could call it
+           before the module's tables exist.
+    \value EnumPrivateLock
+           The private data of enum types is used under a lock: imports and
+           QEnum classes add enum types in any thread.
+    \value QEnumCollectorPerThread
+           The enums a class body marks with QEnum are collected per thread,
+           where the class body runs.
+    \value GenericEnumRegistryLock
+           The generic enum registry is used under a lock: QEnum classes
+           append while conversions read.
+    \value StreamHelperOnce
+           The QDataStream pickle helpers are published once: two first
+           streams would build one each.
+    \value WrapperWalkOwned
+           A walk over all wrappers holds each one it collects, which another
+           thread may drop.
+    \value WrapperDumpLocked
+           dumpWrapperMap() walks the map under its lock, which other threads
+           change.
+    \value MainThreadQueueLock
+           The main-thread deletion queue is used under a lock and run from
+           a copy: other threads queue meanwhile.
+    \value ModuleDictKept
+           replaceModuleDict() leaves the module alone and returns false:
+           another thread could see it between its two stores. PySide6
+           computes __all__ at import.
+    \value StaticInitDetached
+           A thread that waits for the first value of a function-local
+           static whose initializer can reach Python waits detached, see
+           Shiboken::OnceValue.
+    \value NewTypeQualname
+           A type just made from a spec gets its __qualname__ without the
+           setter, which stops the world on Python 3.15 for each type.
 */
 
 static std::uint64_t parseOption(const char *e)

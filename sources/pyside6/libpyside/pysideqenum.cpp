@@ -12,6 +12,10 @@
 #include <sbkpep.h>
 #include <sbkstaticstrings.h>
 #include <sbkstring.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkftoptions.h>
+#  include <sbkheldlocks.h>
+#endif
 
 #include <QtCore/qmetatype.h>
 #include <QtCore/qdebug.h>
@@ -19,6 +23,10 @@
 
 #include <cstring>
 #include <map>
+#ifdef Py_GIL_DISABLED
+#  include <mutex>
+#  include <optional>
+#endif
 #include <utility>
 
 ///////////////////////////////////////////////////////////////
@@ -175,8 +183,16 @@ using EnumCollector = std::map<int, PyObject *>;
 
 static EnumCollector &getEnumCollector()
 {
+#ifdef Py_GIL_DISABLED
+    // Per thread: class body, QEnum decorators and metaclass call share a thread.
+    static thread_local EnumCollector perThread;
+    static EnumCollector shared;
+    return Shiboken::FreeThreading::optionEnabled(
+               Shiboken::FreeThreading::Option::QEnumCollectorPerThread) ? perThread : shared;
+#else
     static EnumCollector result;
     return result;
+#endif
 }
 
 int isFlag(PyObject *obType)
@@ -299,6 +315,33 @@ struct GenericEnumRegistry
 
 Q_GLOBAL_STATIC(GenericEnumRegistry, genericEnumTypeRegistry)
 
+#ifdef Py_GIL_DISABLED
+static std::mutex &genericEnumRegistryMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+// QEnum classes in any thread append; every conversion of such an enum reads.
+class GenericEnumRegistryGuard
+{
+public:
+    Q_DISABLE_COPY_MOVE(GenericEnumRegistryGuard)
+
+    GenericEnumRegistryGuard()
+    {
+        if (Shiboken::FreeThreading::optionEnabled(
+                Shiboken::FreeThreading::Option::GenericEnumRegistryLock)) {
+            m_guard.emplace(genericEnumRegistryMutex());
+        }
+    }
+
+private:
+    std::optional<Shiboken::TrackedGuard<std::mutex, Shiboken::RawLock::GenericEnumRegistry>>
+        m_guard;
+};
+#endif // Py_GIL_DISABLED
+
 } // namespace PySide::QEnum
 
 template <class IntType>
@@ -326,6 +369,9 @@ static void genericEnumPythonToCpp(PyObject *pyIn, void *cppOut)
 
 static PythonToCppFunc isGenericEnumToCppConvertible(PyObject *pyIn)
 {
+#ifdef Py_GIL_DISABLED
+    PySide::QEnum::GenericEnumRegistryGuard guard;
+#endif
 
     if (PySide::QEnum::genericEnumTypeRegistry()->enumTypes.contains(Py_TYPE(pyIn)))
         return genericEnumPythonToCpp;
@@ -345,6 +391,9 @@ static void genericEnumPythonToCpp64(PyObject *pyIn, void *cppOut)
 
 static PythonToCppFunc isGenericEnumToCpp64Convertible(PyObject *pyIn)
 {
+#ifdef Py_GIL_DISABLED
+    PySide::QEnum::GenericEnumRegistryGuard guard;
+#endif
 
     if (PySide::QEnum::genericEnumTypeRegistry()->enum64Types.contains(Py_TYPE(pyIn)))
         return genericEnumPythonToCpp64;
@@ -372,7 +421,14 @@ QMetaType createGenericEnumMetaType(const QByteArray &name, PyTypeObject *pyType
     Shiboken::Conversions::registerConverterName(converter, name.constData());
     Shiboken::Enum::setTypeConverter(pyType, converter, nullptr);
 
+#ifdef Py_GIL_DISABLED
+    {
+        GenericEnumRegistryGuard guard;
+        genericEnumTypeRegistry->enumTypes.append(pyType);
+    }
+#else
     genericEnumTypeRegistry->enumTypes.append(pyType);
+#endif
     return createEnumMetaTypeHelper<GenericEnumType>(name);
 }
 
@@ -387,7 +443,14 @@ QMetaType createGenericEnum64MetaType(const QByteArray &name, PyTypeObject *pyTy
     Shiboken::Conversions::registerConverterName(converter, name.constData());
     Shiboken::Enum::setTypeConverter(pyType, converter, nullptr);
 
+#ifdef Py_GIL_DISABLED
+    {
+        GenericEnumRegistryGuard guard;
+        genericEnumTypeRegistry()->enum64Types.append(pyType);
+    }
+#else
     genericEnumTypeRegistry()->enum64Types.append(pyType);
+#endif
     return createEnumMetaTypeHelper<GenericEnum64Type>(name);
 }
 

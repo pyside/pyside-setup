@@ -141,4 +141,4 @@ class SubModule(ModuleType):
 
 
 _setupQtDirectories()
-Shiboken.replaceModuleDict(sys.modules["PySide6"], SubModule, ModuleDict(globals()))
+@PYSIDE_FT_INIT_ALL@Shiboken.replaceModuleDict(sys.modules["PySide6"], SubModule, ModuleDict(globals()))

@@ -14,6 +14,9 @@
 #include <QtCore/qxmlstream.h>
 
 #include <autodecref.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
 
 #include <optional>
 
@@ -129,7 +132,12 @@ PyObject *loadUiType(PyObject *obFileName, PyObject *obPathSearch)
         Py_RETURN_NONE;
     }
 
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<const QString *> uicBinOnce;
+    const QString &uicBin = *uicBinOnce.get([] { return new QString(getUicBinary()); });
+#else
     static const QString uicBin = getUicBinary();
+#endif
     if (!uicBin.contains(u'/')) {
         if (!pathSearch) {
             qCritical("loadUiType: %s could not be found in the standard location.",

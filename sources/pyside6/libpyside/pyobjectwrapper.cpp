@@ -12,6 +12,10 @@
 #include <sbkpep.h>
 #include <sbkstring.h>
 #include <sbkstaticstrings.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkfailpoint.h>
+#  include <sbkftoptions.h>
+#endif
 
 #include <QtCore/qdebug.h>
 
@@ -45,6 +49,36 @@ def _safe_loads(d): return _U(_I.BytesIO(d)).load()
     Py_XINCREF(func);
     return func;
 }
+
+#ifdef Py_GIL_DISABLED
+static PyObject *createReduceFunc()
+{
+    Shiboken::AutoDecRef pickleModule(PyImport_ImportModule("pickle"));
+    return PyObject_GetAttr(pickleModule, Shiboken::PyName::dumps());
+}
+
+// Two threads streaming first build one helper each; the first published
+// wins. It is never released, so callers need no reference.
+static PyObject *streamHelper(std::atomic<PyObject *> &slot, PyObject *(*create)())
+{
+    PyObject *helper = slot.load(std::memory_order_acquire);
+    if (helper != nullptr)
+        return helper;
+    PyObject *candidate = create();
+    Shiboken::failpoint("stream-helper-before-publish");
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::StreamHelperOnce)) {
+        slot.store(candidate, std::memory_order_release);
+        return candidate;
+    }
+    if (candidate == nullptr || slot.compare_exchange_strong(helper, candidate,
+                                                             std::memory_order_acq_rel)) {
+        return candidate;
+    }
+    Py_DECREF(candidate);
+    return helper;
+}
+#endif // Py_GIL_DISABLED
 
 namespace PySide {
 
@@ -161,6 +195,10 @@ QDataStream &operator<<(QDataStream &out, const PyObjectWrapper &myObj)
         return out;
     }
 
+#ifdef Py_GIL_DISABLED
+    Shiboken::GilState gil;
+    PyObject *reduce_func = streamHelper(PySide::globals()->pickleReduceFunc, createReduceFunc);
+#else
     PyObject *&reduce_func = PySide::globals()->pickleReduceFunc;
 
     Shiboken::GilState gil;
@@ -168,6 +206,7 @@ QDataStream &operator<<(QDataStream &out, const PyObjectWrapper &myObj)
         Shiboken::AutoDecRef pickleModule(PyImport_ImportModule("pickle"));
         reduce_func = PyObject_GetAttr(pickleModule, Shiboken::PyName::dumps());
     }
+#endif
     PyObject *pyObj = myObj;
     Shiboken::AutoDecRef repr(PyObject_CallFunctionObjArgs(reduce_func, pyObj, nullptr));
     if (repr.object()) {
@@ -193,11 +232,17 @@ QDataStream &operator>>(QDataStream &in, PyObjectWrapper &myObj)
         return in;
     }
 
+#ifdef Py_GIL_DISABLED
+    Shiboken::GilState gil;
+    PyObject *safe_loads = streamHelper(PySide::globals()->pickleSafeLoadsFunc,
+                                        createSafeLoadsFunc);
+#else
     PyObject *&safe_loads = PySide::globals()->pickleSafeLoadsFunc;
 
     Shiboken::GilState gil;
     if (!safe_loads)
         safe_loads = createSafeLoadsFunc();
+#endif
 
     QByteArray repr;
     in >> repr;

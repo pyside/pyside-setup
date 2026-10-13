@@ -12,6 +12,10 @@
 #include <sbkconverter.h>
 #include <sbkpep.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 
 // Part of the static plugin linked to the QtUiLoader Python module,
 // allowing it to create a custom widget written in Python.
@@ -77,7 +81,14 @@ QWidget *PyCustomWidget::createWidget(QWidget *parent)
         if (auto wrapper = Shiboken::BindingManager::instance().wrapperRef(parent)) {
             pyParent = wrapper.newRef();
         } else {
+#ifdef Py_GIL_DISABLED
+            static Shiboken::OnceValue<Shiboken::Conversions::SpecificConverter *> converterOnce;
+            auto &converter = *converterOnce.get([] {
+                return new Shiboken::Conversions::SpecificConverter("QWidget*");
+            });
+#else
             static Shiboken::Conversions::SpecificConverter converter("QWidget*");
+#endif
             pyParent = converter.toPython(&parent);
             unknownParent = true;
         }

@@ -24,11 +24,18 @@
 
 #include "autodecref.h"
 #include "sbkpep.h"
+#ifdef Py_GIL_DISABLED
+#  include "sbkfailpoint.h"
+#  include "sbkftoptions.h"
+#endif
 #include "sbkstring.h"
 #include "sbkstaticstrings.h"
 #include "sbkstaticstrings_p.h"
 
 #include "signature_p.h"
+#ifdef Py_GIL_DISABLED
+#  include "sbkheldlocks.h"
+#endif
 
 #include <cstring>
 
@@ -119,7 +126,22 @@ static PyObject *old_md_doc_descr = nullptr;
 static PyObject *old_tp_doc_descr = nullptr;
 static PyObject *old_wd_doc_descr = nullptr;
 
+#ifdef Py_GIL_DISABLED
+// Per thread: two threads inside make_helptext() saw each other's recursion
+static thread_local int handle_doc_depth = 0;
+static int handle_doc_depth_shared = 0;
+
+static int &handleDocDepth()
+{
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::DocRecursionPerThread)) {
+        return handle_doc_depth_shared;
+    }
+    return handle_doc_depth;
+}
+#else // Py_GIL_DISABLED
 static int handle_doc_in_progress = 0;
+#endif // Py_GIL_DISABLED
 
 static PyObject *handle_doc(PyObject *ob, PyObject *old_descr)
 {
@@ -130,6 +152,18 @@ static PyObject *handle_doc(PyObject *ob, PyObject *old_descr)
         : PepType_GetFullyQualifiedNameStr(reinterpret_cast<PyTypeObject *>(ob_type_mod.object()));
     PyObject *res{};
 
+#ifdef Py_GIL_DISABLED
+    int &depth = handleDocDepth();
+    if (depth != 0 || name == nullptr
+        || (isModule && std::strncmp(name, "PySide6.", 8) != 0)) {
+        res = PyObject_CallMethodObjArgs(old_descr, PyMagicName::get(), ob, nullptr);
+    } else {
+        ++depth;
+        Shiboken::failpoint("doc-before-helptext");
+        res = PyObject_CallFunction(signatureGlobals()->make_helptext_func, "(O)", ob);
+        --depth;
+    }
+#else
     if (handle_doc_in_progress || name == nullptr
         || (isModule && std::strncmp(name, "PySide6.", 8) != 0)) {
         res = PyObject_CallMethodObjArgs(old_descr, PyMagicName::get(), ob, nullptr);
@@ -138,6 +172,8 @@ static PyObject *handle_doc(PyObject *ob, PyObject *old_descr)
         res = PyObject_CallFunction(signatureGlobals()->make_helptext_func, "(O)", ob);
         handle_doc_in_progress--;
     }
+
+#endif // Py_GIL_DISABLED
 
     if (res)
         return res;
@@ -196,6 +232,10 @@ static PyGetSetDef new_PyWrapperDescr_getsets[] = {
 int PySide_PatchTypes(void)
 {
     static int init_done = 0;
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceFlag once;
+    Shiboken::OnceGate gate(once, [] { return init_done != 0; });
+#endif
 
     if (!init_done) {
         AutoDecRef meth_descr(PyObject_GetAttrString(

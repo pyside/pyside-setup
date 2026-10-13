@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Configure include based on platform
+if(SHIBOKEN_PYTHON_FREE_THREADED)
+    # Shiboken keeps the module dict, so __all__ is computed at import.
+    set(PYSIDE_FT_INIT_ALL "__all__ = _find_all_qt_modules()\n")
+endif()
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/__init__.py.in"
                "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" @ONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/_config.py.in"

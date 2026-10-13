@@ -14,6 +14,13 @@
 #include "basewrapper_p.h"
 #include "sbkenum_p.h"
 #include "voidptr.h"
+#ifdef Py_GIL_DISABLED
+#  include "sbkftoptions.h"
+#  include "sbkheldlocks.h"
+#  include "shibokenclasshelpermacros.h"
+#  include <mutex>
+#  include <optional>
+#endif
 
 #include <cstdlib>
 #include <cstring>
@@ -720,11 +727,21 @@ PyObject *PepType_GetQualName(PyTypeObject *type)
 
 // PYSIDE-2264: Find the _functools or functools module and retrieve the
 //              partial function. This can be tampered with, check carefully.
+/*!
+    \fn PyObject *Pep_GetPartialFunction()
+
+    Returns a new reference to functools.partial. On free-threaded builds, a
+    second thread waits detached for the first lookup.
+*/
 PyObject *
 Pep_GetPartialFunction(void)
 {
     static bool initialized = false;
     static PyObject *result{};
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceFlag once;
+    Shiboken::OnceGate gate(once, [] { return initialized; });
+#endif
     if (initialized) {
         Py_INCREF(result);
         return result;
@@ -879,8 +896,13 @@ static long _GetPepRuntimeVersion()
 
 long _PepRuntimeVersion()
 {
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceValue<const long *> number;
+    return *number.get([] { return new long(_GetPepRuntimeVersion()); });
+#else
     static const auto number = _GetPepRuntimeVersion();
     return number;
+#endif
 }
 
 /*****************************************************************************
@@ -1006,23 +1028,69 @@ static SETP_Extender &getSETP_extender()
 static thread_local SbkEnumType *SETP_key{};
 static thread_local SbkEnumTypePrivate *SETP_value{};
 
+#ifdef Py_GIL_DISABLED
+static std::mutex &setpMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+// Imports and QEnum classes in any thread create enums; conversions read
+// their private data. Map work only.
+class SetpGuard
+{
+public:
+    LIBSHIBOKEN_DISABLE_COPY(SetpGuard)
+
+    SetpGuard()
+    {
+        if (Shiboken::FreeThreading::optionEnabled(
+                Shiboken::FreeThreading::Option::EnumPrivateLock))
+            m_guard.emplace(setpMutex());
+    }
+
+private:
+    std::optional<Shiboken::TrackedGuard<std::mutex, Shiboken::RawLock::EnumPrivate>> m_guard;
+};
+#endif // Py_GIL_DISABLED
+
 SbkEnumTypePrivate *PepType_SETP(SbkEnumType *enumType)
 {
     // PYSIDE-2230: This makes no sense at all for Enum types.
     if (enumType == SETP_key)
         return SETP_value;
     auto &SETP_extender = getSETP_extender();
+#ifdef Py_GIL_DISABLED
+    // The node is stable; the cache keeps a pointer into it
+    SbkEnumTypePrivate *value = [&SETP_extender, enumType] {
+        SetpGuard guard;
+        auto it = SETP_extender.find(enumType);
+        if (it == SETP_extender.end())
+            it = SETP_extender.insert({enumType, SbkEnumTypePrivate{nullptr, nullptr}}).first;
+        return &it->second;
+    }();
+    SETP_key = enumType;
+    SETP_value = value;
+#else
     auto it = SETP_extender.find(enumType);
     if (it == SETP_extender.end())
         it = SETP_extender.insert({enumType, SbkEnumTypePrivate{nullptr, nullptr}}).first;
     SETP_key = enumType;
     SETP_value = &it->second;
+#endif // Py_GIL_DISABLED
     return SETP_value;
 }
 
 void PepType_SETP_delete(SbkEnumType *enumType)
 {
+#ifdef Py_GIL_DISABLED
+    {
+        SetpGuard guard;
+        getSETP_extender().erase(enumType);
+    }
+#else
     getSETP_extender().erase(enumType);
+#endif
     SETP_key = nullptr;
 }
 
@@ -1122,6 +1190,41 @@ int PepModule_Add(PyObject *module, const char *name, PyObject *value)
     return result;
 #endif
 }
+
+#ifdef Py_GIL_DISABLED
+/*!
+    \fn PyObject *PepDict_IterationSnapshot(PyObject *dict)
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    Returns a new reference to a copy of \a dict for a PyDict_Next() loop,
+    so that another thread changing \a dict cannot free the borrowed items.
+    nullptr with an exception on failure.
+*/
+PyObject *PepDict_IterationSnapshot(PyObject *dict)
+{
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::DictIterationSnapshot))
+        return Py_NewRef(dict);
+    if (PyDict_CheckExact(dict))
+        return PyDict_Copy(dict);
+    // PyDict_Copy() of a subclass goes through its keys() and __getitem__
+    PyObject *copy = PyDict_New();
+    if (copy == nullptr)
+        return nullptr;
+    int failed = 0;
+    Py_BEGIN_CRITICAL_SECTION(dict);
+    PyObject *key{};
+    PyObject *value{};
+    Py_ssize_t pos = 0;
+    while (failed == 0 && PyDict_Next(dict, &pos, &key, &value))
+        failed = PyDict_SetItem(copy, key, value);
+    Py_END_CRITICAL_SECTION();
+    if (failed != 0)
+        Py_CLEAR(copy);
+    return copy;
+}
+#endif // Py_GIL_DISABLED
 
 /***************************************************************************
  *

@@ -412,6 +412,36 @@ PyTypeObject *SbkObjectType_TypeF(void)
     return globals->sbkObjectMetaType;
 }
 
+#ifdef Py_GIL_DISABLED
+// A subclass of Shiboken.ObjectType with the tp_new of type, which
+// PyType_FromMetaclass accepts. Made once in Shiboken::init().
+static PyTypeObject *objectTypeFactory = nullptr;
+
+static PyTypeObject *createObjectTypeFactoryType()
+{
+    PyType_Slot slots[] = {
+        {Py_tp_base, reinterpret_cast<void *>(SbkObjectType_TypeF())},
+        {Py_tp_new, reinterpret_cast<void *>(PyType_Type.tp_new)},
+        {0, nullptr}
+    };
+
+    PyType_Spec spec = {
+        "1:Shiboken.ObjectTypeFactory",
+        0,
+        0,
+        Py_TPFLAGS_DEFAULT,
+        slots,
+    };
+    return SbkType_FromSpec(&spec);
+}
+
+PyTypeObject *SbkObjectType_FactoryTypeF()
+{
+    assert(objectTypeFactory != nullptr);
+    return objectTypeFactory;
+}
+#endif // Py_GIL_DISABLED
+
 static PyObject *SbkObjectGetDict(PyObject *pObj, void *)
 {
     auto *ret = SbkObject_GetDict_NoRef(pObj);
@@ -1259,6 +1289,10 @@ namespace Conversions { void init(); }
 void init()
 {
     static bool shibokenAlreadInitialised = false;
+#ifdef Py_GIL_DISABLED
+    static OnceFlag once;
+    OnceGate gate(once, [] { return shibokenAlreadInitialised; });
+#endif
     if (shibokenAlreadInitialised) // Leave guard in place until fully ported to multi phase init
         return;
 
@@ -1272,6 +1306,13 @@ void init()
     auto *type = SbkObjectType_TypeF();
     if (type == nullptr || PyType_Ready(type) < 0)
         Py_FatalError(msgFailedToInitializeType("Shiboken.BaseWrapperType metatype").c_str());
+
+#ifdef Py_GIL_DISABLED
+    // Before the first type of that metaclass, Shiboken.Object below
+    objectTypeFactory = createObjectTypeFactoryType();
+    if (objectTypeFactory == nullptr)
+        Py_FatalError(msgFailedToInitializeType("Shiboken.ObjectTypeFactory").c_str());
+#endif
 
     type = SbkObject_TypeF();
     if (type == nullptr || PyType_Ready(type) < 0)
@@ -1387,12 +1428,21 @@ PyObject *checkInvalidArgumentCount(Py_ssize_t numArgs, Py_ssize_t minArgs, Py_s
     PyObject *result = nullptr;
     // for seterror_argument(), signature/errorhandler.py
     if (numArgs > maxArgs) {
+#ifdef Py_GIL_DISABLED
+        static Shiboken::OnceString tooMany(">");
+#else
         static PyObject *const tooMany = Shiboken::String::createStaticString(">");
+#endif
         result = tooMany;
         Py_INCREF(result);
     } else if (numArgs < minArgs) {
+#ifdef Py_GIL_DISABLED
+        static Shiboken::OnceString tooFew("<");
+        static Shiboken::OnceString noArgs("0");
+#else
         static PyObject *const tooFew = Shiboken::String::createStaticString("<");
         static PyObject *const noArgs = Shiboken::String::createStaticString("0");
+#endif
         result = numArgs > 0 ? tooFew : noArgs;
         Py_INCREF(result);
     }
@@ -1613,9 +1663,21 @@ introduceWrapperType(PyObject *enclosingObject,
                      unsigned wrapperFlags)
 {
     assert(PySequence_Size(bases) > 0);
+#ifdef Py_GIL_DISABLED
+    // The spec may be shared by several types: its slots are copied, not written
+    std::vector<PyType_Slot> slots;
+    for (const auto *slot = typeSpec->slots; slot->slot != 0; ++slot)
+        slots.push_back(*slot);
+    slots.push_back({0, nullptr});
+    slots[0].pfunc = PySequence_GetItem(bases, 0);
+    PyType_Spec spec = *typeSpec;
+    spec.slots = slots.data();
+    auto *type = SbkType_FromSpecBasesMeta(&spec, bases, SbkObjectType_TypeF());
+#else
     typeSpec->slots[0].pfunc = PySequence_GetItem(bases, 0);
 
     auto *type = SbkType_FromSpecBasesMeta(typeSpec, bases, SbkObjectType_TypeF());
+#endif // Py_GIL_DISABLED
 
     auto *sotp = PepType_SOTP(type);
     if (wrapperFlags & DeleteInMainThread)

@@ -185,7 +185,8 @@ namespace Shiboken
 {
 
 /*!
-    Initializes the shiboken library.
+    Initializes the shiboken library. On free-threaded builds, a thread that
+    calls it while another one runs it waits until that one is done.
 */
 LIBSHIBOKEN_API void init();
 

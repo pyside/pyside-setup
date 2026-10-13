@@ -15,6 +15,10 @@
 #include <sbkconverter.h>
 #include <sbkstring.h>
 
+#ifdef Py_GIL_DISABLED
+#  include <sbkheldlocks.h>
+#endif
+
 QT_BEGIN_NAMESPACE
 
 static QString pyStringToQString(PyObject *s)
@@ -102,7 +106,14 @@ QWidget *PyDesignerCustomWidget::createWidget(QWidget *parent)
         if (auto wrapper = Shiboken::BindingManager::instance().wrapperRef(parent)) {
             pyParent = wrapper.newRef();
         } else {
+#ifdef Py_GIL_DISABLED
+            static Shiboken::OnceValue<Shiboken::Conversions::SpecificConverter *> converterOnce;
+            auto &converter = *converterOnce.get([] {
+                return new Shiboken::Conversions::SpecificConverter("QWidget*");
+            });
+#else
             static Shiboken::Conversions::SpecificConverter converter("QWidget*");
+#endif
             pyParent = converter.toPython(&parent);
             unknownParent = true;
         }
@@ -190,17 +201,41 @@ bool QPyDesignerCustomWidgetCollection::_registerCustomWidgetHelper(PyObject *ty
 
     auto pyCustomWidget = new PyDesignerCustomWidget(typeArg);
 
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString xmlKey("xml");
+#else
     static PyObject *xmlKey = Shiboken::String::createStaticString("xml");
+#endif
     pyCustomWidget->setDomXml(kwdString(kwds, xmlKey));
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString toolTipKey("tool_tip");
+#else
     static PyObject *toolTipKey = Shiboken::String::createStaticString("tool_tip");
+#endif
     pyCustomWidget->setToolTip(kwdString(kwds, toolTipKey));
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString groupKey("group");
+#else
     static PyObject *groupKey = Shiboken::String::createStaticString("group");
+#endif
     pyCustomWidget->setGroup(kwdString(kwds, groupKey));
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString moduleKey("module");
+#else
     static PyObject *moduleKey = Shiboken::String::createStaticString("module");
+#endif
     pyCustomWidget->setIncludeFile(kwdString(kwds, moduleKey));
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString containerKey("container");
+#else
     static PyObject *containerKey = Shiboken::String::createStaticString("container");
+#endif
     pyCustomWidget->setContainer(kwdBool(kwds, containerKey));
+#ifdef Py_GIL_DISABLED
+    static Shiboken::OnceString iconKey("icon");
+#else
     static PyObject *iconKey = Shiboken::String::createStaticString("icon");
+#endif
     const QString iconPath = kwdString(kwds, iconKey);
     if (!iconPath.isEmpty()) {
         QIcon icon(iconPath);

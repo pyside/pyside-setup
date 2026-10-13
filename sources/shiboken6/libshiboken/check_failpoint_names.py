@@ -21,6 +21,8 @@ HERE = Path(__file__).resolve().parent
 REGISTRY = HERE / "sbkfailpoint.cpp"
 ARRAY = re.compile(r"KnownFailpoints\s*=\s*\{(.*?)\};", re.DOTALL)
 CALL = re.compile(r'Shiboken::failpoint\s*\(\s*"([^"]+)"\s*\)')
+# A call the generator writes into generated code, its quotes escaped
+EMITTED = re.compile(r'Shiboken::failpoint\s*\(\s*\\"([^"\\]+)\\"\s*\)')
 LITERAL = re.compile(r'"([^"]+)"')
 # Directories without shipped runtime code.
 NOT_RUNTIME = {"tests", "doc", "shiboken6_generator"}
@@ -35,15 +37,18 @@ def called(files: list[Path]) -> dict[str, str]:
     used: dict[str, str] = {}
     for path in files:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            for name in CALL.findall(line):
+            for name in CALL.findall(line) + EMITTED.findall(line):
                 used.setdefault(name, f"{path.name}:{number}")
     return used
 
 
 def default_files() -> list[Path]:
     sources = HERE.parents[1]
-    return sorted(f for pattern in ("*.cpp", "*.h") for f in sources.rglob(pattern)
-                  if not NOT_RUNTIME & set(f.relative_to(sources).parts))
+    files = sorted(f for pattern in ("*.cpp", "*.h") for f in sources.rglob(pattern)
+                   if not NOT_RUNTIME & set(f.relative_to(sources).parts))
+    # The generator itself is no runtime code, but what it writes is
+    generator = sources / "shiboken6_generator" / "generator" / "shiboken" / "cppgenerator.cpp"
+    return files + [generator] if generator.is_file() else files
 
 
 def main() -> int:
