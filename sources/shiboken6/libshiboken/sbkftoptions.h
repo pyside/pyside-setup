@@ -16,6 +16,8 @@ namespace Shiboken::FreeThreading {
 
 enum class Option : std::uint64_t
 {
+    OwnerThreadDeletion = 0x1,
+    FinishedOwnerCleanup = 0x2,
 };
 
 LIBSHIBOKEN_API bool optionEnabled(Option opt);

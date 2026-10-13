@@ -14,7 +14,8 @@ PYSIDE_API void initQApp();
 
 /*!
     Destroys a QCoreApplication taking care of destroying all instances
-    of QObject first.
+    of QObject first. On free-threaded builds, a QObject of another running
+    thread is left to that thread.
 */
 PYSIDE_API void destroyQCoreApplication();
 

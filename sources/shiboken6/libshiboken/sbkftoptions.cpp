@@ -40,6 +40,14 @@ namespace Shiboken::FreeThreading {
     \c off none, a number the bits it sets, and \c{~}\e{number} all but
     those. Clearing a bit is a testing device; only all bits set is
     supported.
+
+    \value OwnerThreadDeletion
+           A Python-owned QObject is deleted in its own thread
+           (setDeleteInOwnerThread()).
+    \value FinishedOwnerCleanup
+           A QObject handed to its owner thread while that thread finishes
+           is deleted once it has finished, if its deferred deletion missed
+           the thread's last flush.
 */
 
 static std::uint64_t parseOption(const char *e)

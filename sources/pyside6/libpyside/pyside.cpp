@@ -42,6 +42,12 @@
 #include <sbkmodule.h>
 #include <sbkpydictrange.h>
 #include <sbkpytuplerange.h>
+#ifdef Py_GIL_DISABLED
+#  include <sbkfailpoint.h>
+#  include <sbkftoptions.h>
+#  include <QtCore/qpointer.h>
+#  include <QtCore/qtimer.h>
+#endif
 
 #include <QtCore/qabstracteventdispatcher.h>
 #include <QtCore/qbytearray.h>
@@ -447,6 +453,71 @@ void runCleanupFunctions()
     }
 }
 
+#ifdef Py_GIL_DISABLED
+static bool inOtherRunningThread(const QObject *qobject)
+{
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::OwnerThreadDeletion))
+        return false;
+    QThread *owner = qobject->thread();
+    return owner != nullptr && owner != QThread::currentThread() && owner->isRunning();
+}
+
+// Deletes an object whose deferred deletion may have come after the last flush
+// of its finishing owner, once the owner has finished. It never waits: a slot
+// of the owner's finished() may wait for the caller. The main thread asks again.
+static void deleteWhenOwnerFinished(const QPointer<QObject> &object,
+                                    const QPointer<QThread> &owner)
+{
+    if (!owner.isNull() && !owner->wait(QDeadlineTimer(0))) {
+        QCoreApplication *app = QCoreApplication::instance();
+        if (app == nullptr)
+            return;
+        auto again = [object, owner] { deleteWhenOwnerFinished(object, owner); };
+        if (app->thread() == QThread::currentThread())
+            QTimer::singleShot(std::chrono::milliseconds(10), app, again);
+        else
+            QMetaObject::invokeMethod(app, again, Qt::QueuedConnection);
+        return;
+    }
+    if (object.isNull())
+        return;
+    QCoreApplication::removePostedEvents(object.data(), QEvent::DeferredDelete);
+    delete object.data();
+}
+
+static void deleteLaterEntry(void *qobject)
+{
+    auto *object = static_cast<QObject *>(qobject);
+    Shiboken::failpoint("delete-later-before-post");
+    if (!Shiboken::FreeThreading::optionEnabled(
+            Shiboken::FreeThreading::Option::FinishedOwnerCleanup)) {
+        object->deleteLater();
+        return;
+    }
+    // A finishing thread flushes its deferred deletions once; an event posted
+    // after that never runs. Still running after the post, it has not flushed.
+    QPointer<QThread> owner(object->thread());
+    QPointer<QObject> guard(object);
+    object->deleteLater();
+    if (owner.isNull() || !owner->isRunning())
+        deleteWhenOwnerFinished(guard, owner);
+}
+
+// Hook of setDeleteInOwnerThread(): a running owner thread deletes its QObject itself.
+static void deleteInOwnerThread(SbkObject *sbkObj, Shiboken::DestructorEntry &entry)
+{
+    PyTypeObject *qObjType = PySide::qObjectType();
+    if (!PyType_IsSubtype(Py_TYPE(sbkObj), qObjType)
+        || Shiboken::Object::cppPointer(sbkObj, qObjType) != entry.cppInstance) {
+        return;
+    }
+    void *qobject = Shiboken::Conversions::cppPointer(qObjType, sbkObj);
+    if (inOtherRunningThread(static_cast<QObject *>(qobject)))
+        entry = {deleteLaterEntry, qobject};
+}
+#endif // Py_GIL_DISABLED
+
 static void destructionVisitor(SbkObject *pyObj, void *data)
 {
     auto *realData = reinterpret_cast<void **>(data);
@@ -456,6 +527,13 @@ static void destructionVisitor(SbkObject *pyObj, void *data)
     auto *ob = reinterpret_cast<PyObject *>(pyObj);
     if (pyObj != pyQApp && PyObject_TypeCheck(ob, pyQObjectType)) {
         if (Shiboken::Object::hasOwnership(pyObj) && Shiboken::Object::isValid(pyObj, false)) {
+#ifdef Py_GIL_DISABLED
+            // Another running thread's object stays; its wrapper hands it over later.
+            if (inOtherRunningThread(static_cast<QObject *>(
+                    Shiboken::Conversions::cppPointer(pyQObjectType, pyObj)))) {
+                return;
+            }
+#endif
             Shiboken::Object::setValidCpp(pyObj, false);
 
             Py_BEGIN_ALLOW_THREADS
@@ -602,6 +680,11 @@ static void registerQAppInputHook()
     qAddPostRoutine(unregisterQAppInputHook);
 }
 
+/*!
+    Sets up qApp for the QtCore module and registers destroyQCoreApplication()
+    with libshiboken. Free-threaded builds also install
+    Shiboken::setDeleteInOwnerThread().
+*/
 void initQApp()
 {
     /*
@@ -622,6 +705,9 @@ void initQApp()
 
     // PYSIDE-1470: Register a function to destroy an application from shiboken.
     setDestroyQApplication(destroyQCoreApplication);
+#ifdef Py_GIL_DISABLED
+    Shiboken::setDeleteInOwnerThread(deleteInOwnerThread);
+#endif
 }
 
 static PyObject *getHiddenTruePropertyDataFromQObject(PyObject *self, PyObject *name)

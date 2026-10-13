@@ -20,7 +20,8 @@ namespace Shiboken
 
 // check_failpoint_names.py keeps this list and
 // the Shiboken::failpoint() call sites in step.
-static constexpr std::array<const char *, 0> KnownFailpoints = {
+static constexpr std::array<const char *, 1> KnownFailpoints = {
+    "delete-later-before-post",
 };
 
 struct FailpointState

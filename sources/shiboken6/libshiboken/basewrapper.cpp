@@ -143,6 +143,23 @@ static void callDestructor(const DestructorEntries &dts)
     }
 }
 
+#ifdef Py_GIL_DISABLED
+static DeleteInOwnerThreadHook DeleteInOwnerThread = nullptr;
+
+/*!
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    Sets \a func, which the deallocation of an owning wrapper offers each
+    destructor entry; \a func may replace it. libpyside turns the entry of a
+    QObject of another running thread into a deleteLater() there.
+*/
+void setDeleteInOwnerThread(DeleteInOwnerThreadHook func)
+{
+    DeleteInOwnerThread = func;
+}
+#endif // Py_GIL_DISABLED
+
 } // namespace Shiboken
 
 extern "C"
@@ -479,6 +496,22 @@ static void SbkDeallocWrapperCommon(PyObject *pyObj, bool canDelete)
     /* Save the current exception, if any. */
     Shiboken::Errors::Stash errorStash;
 
+#ifdef Py_GIL_DISABLED
+    if (canDelete) {
+        // A QObject of another running thread is deleted there once the wrapper is gone
+        auto entries = sotp->is_multicpp
+            ? Shiboken::getDestructorEntries(sbkObj)
+            : Shiboken::DestructorEntries{{sotp->cpp_dtor, Shiboken::cppPointer(sbkObj->d)}};
+        if (Shiboken::DeleteInOwnerThread != nullptr) {
+            for (auto &e : entries)
+                Shiboken::DeleteInOwnerThread(sbkObj, e);
+        }
+        Shiboken::Object::deallocData(sbkObj, true);
+        callDestructor(entries);
+    } else {
+        Shiboken::Object::deallocData(sbkObj, true);
+    }
+#else // Py_GIL_DISABLED
     if (canDelete) {
         if (sotp->is_multicpp) {
             const auto entries = Shiboken::getDestructorEntries(sbkObj);
@@ -496,6 +529,7 @@ static void SbkDeallocWrapperCommon(PyObject *pyObj, bool canDelete)
     } else {
         Shiboken::Object::deallocData(sbkObj, true);
     }
+#endif // Py_GIL_DISABLED
 
     /* Restore the saved exception. */
     errorStash.restore();

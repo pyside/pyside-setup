@@ -12,10 +12,11 @@ How to run them: README.md.
 """
 
 import os
+import re
 import subprocess
 import sys
 
-from fpharness import BUILD, FREE_THREADED, Shiboken, Test, defect_shown, main
+from fpharness import BUILD, FREE_THREADED, REPO, Shiboken, Test, counterproof, defect_shown, main
 
 
 def test_hooks() -> str:
@@ -63,10 +64,30 @@ def test_option_parse() -> str:
     return f"FAIL: {'; '.join(wrong)}" if wrong else "ok"
 
 
+def test_owner_thread_deletion() -> str:
+    """A Python-owned QObject is destroyed in its own thread when its wrapper
+    dies elsewhere (pysidetest/owner_thread_deletion_test.py)."""
+    test = REPO / "sources" / "pyside6" / "tests" / "pysidetest" / "owner_thread_deletion_test.py"
+    proc = subprocess.run([sys.executable, os.fspath(test)], capture_output=True, text=True,
+                          env=dict(os.environ, BUILD_DIR=os.fspath(BUILD)), timeout=300)
+    if proc.returncode == 0:
+        return "ok"
+    # Each failed method by name, with the message its assertion carries.
+    failures = re.findall(r"^FAIL: (\w+)", proc.stderr, re.MULTILINE)
+    messages = sorted(set(re.findall(r" : (.+)$", proc.stderr, re.MULTILINE)))
+    return f"FAIL: {', '.join(failures) or proc.stderr[-200:]}: {'; '.join(messages)}"
+
+
 TESTS = {
     "hooks": Test(test_hooks),
     "defect-match": Test(test_defect_match),
     "option-parse": Test(test_option_parse),
+    "owner-thread-deletion": Test(test_owner_thread_deletion),
+    "proof-owner-thread-deletion": Test(lambda: counterproof(
+        "OwnerThreadDeletion", "owner-thread-deletion", "not destroyed in the owner thread")),
+    "proof-finished-owner-cleanup": Test(lambda: counterproof(
+        "FinishedOwnerCleanup", "owner-thread-deletion",
+        "never destroyed after its owner thread finished")),
 }
 
 

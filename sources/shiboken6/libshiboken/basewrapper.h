@@ -200,6 +200,12 @@ void callCppDestructor(void *cptr)
     delete reinterpret_cast<T *>(cptr);
 }
 
+#ifdef Py_GIL_DISABLED
+using DeleteInOwnerThreadHook = void (*)(SbkObject *sbkObj, DestructorEntry &entry);
+
+LIBSHIBOKEN_API void setDeleteInOwnerThread(DeleteInOwnerThreadHook func);
+#endif
+
 /*!
     Sets an error about wrong arguments \a args passed to the function
     \a funcName (of the class \a className).
