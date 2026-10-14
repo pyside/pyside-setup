@@ -161,6 +161,16 @@ Options
     A comma-separated list of keywords for conditional typesystem parsing
     (see :ref:`conditional_processing`).
 
+.. _module-uses-gil:
+
+``--module-uses-gil=<yes|no|auto>``
+    Whether the module uses the *Global Interpreter Lock* (GIL) in a *Free
+    Threaded* build (default: yes). With **auto**, the generated code declares
+    ``Py_MOD_GIL_NOT_USED`` only if ``Py_GIL_DISABLED`` is defined, and
+    ``Py_MOD_GIL_USED`` otherwise (before Python 3.15, no ``Py_mod_gil`` slot,
+    which means the same). The **module-uses-gil** attribute of the
+    :ref:`typesystem <typesystem_details>` element overrides it.
+
 ``--use-global-header``
     Use the global headers passed on the command line in generated code.
 

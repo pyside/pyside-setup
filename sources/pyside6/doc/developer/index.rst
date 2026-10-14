@@ -24,6 +24,7 @@ Development Topics
    qtasyncio.rst
    signalmanager.md
    pythonlibraries.md
+   freethreading.md
 
 Library documentation
 ---------------------

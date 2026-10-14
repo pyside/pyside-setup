@@ -52,7 +52,7 @@ It can have a number of attributes, described below.
                 namespace-end="..."
                 doc-package="..."
                 doc-mode = "nested | flat"
-                module-uses-gil="yes | no" >
+                module-uses-gil="yes | no | auto" >
     </typesystem>
 
 The **package** attribute is a string describing the package to be used,
@@ -102,9 +102,15 @@ too many classes are contained in a namespace, causing excessively long pages.
 However, the referencing may then not fully work.
 
 The *optional* attribute **module-uses-gil** determines whether the module uses
-the *Global Interpreter Lock* (GIL) in a *Free Threaded* build.
+the *Global Interpreter Lock* (GIL) in a *Free Threaded* build. With **auto**,
+the generated code declares ``Py_MOD_GIL_NOT_USED`` only if ``Py_GIL_DISABLED``
+is defined, and ``Py_MOD_GIL_USED`` otherwise (before Python 3.15, no
+``Py_mod_gil`` slot, which means the same). The attribute overrides the
+command line option :ref:`--module-uses-gil <module-uses-gil>`, whose default
+is **yes**: importing such a module switches the GIL back on for the whole
+process, unless it is forced off with ``PYTHON_GIL=0``.
 
-.. note:: *Free Threaded* builds are not supported.
+.. note:: Support for *Free Threaded* builds is experimental.
 
 .. _load-typesystem:
 
