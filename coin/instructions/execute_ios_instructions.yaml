@@ -1,6 +1,13 @@
 type: Group
 instructions:
   - type: ExecuteCommand
+    command: ["{{.Env.interpreter}}", "-m", "pip", "install",
+              "--user", "--upgrade", "pip>=26.2.2"]
+    maxTimeInSeconds: 14400
+    maxTimeBetweenOutput: 1200
+    userMessageOnFailure: >
+         Failed to upgrade pip
+  - type: ExecuteCommand
     command: "{{.Env.interpreter}} -m pip install --user -r requirements.txt"
     maxTimeInSeconds: 14400
     maxTimeBetweenOutput: 1200

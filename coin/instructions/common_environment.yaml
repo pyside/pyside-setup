@@ -573,6 +573,21 @@ instructions:
     - type: EnvironmentVariable
       variableName: ENV_PYTHON
       variableValue: "{{.AgentWorkingDir}}/env/bin/python"
+    - type: ExecuteCommand
+      command: ["{{.Env.ENV_PYTHON}}", "-m", "pip", "install", "--upgrade", "pip>=26.2.2"]
+      maxTimeInSeconds: 14400
+      maxTimeBetweenOutput: 1200
+      enable_if:
+          condition: or
+          conditions:
+          - condition: property
+            property: host.os
+            equals_value: Linux
+          - condition: property
+            property: host.os
+            equals_value: MacOS
+      userMessageOnFailure: >
+          Failed to upgrade pip
     - type: AppendToEnvironmentVariable
       variableName: PATH
       variableValue: ":{{.AgentWorkingDir}}/env/bin/"
@@ -580,5 +595,3 @@ instructions:
         condition: property
         property: target.os
         equals_value: Android
-
-

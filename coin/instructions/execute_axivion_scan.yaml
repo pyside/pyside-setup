@@ -42,6 +42,11 @@ create_venv: &create_venv
       maxTimeBetweenOutput: 100
       userMessageOnFailure: "Failed to create venv"
     - type: ExecuteCommand
+      command: ["{{.SourceDir}}/env/bin/python", "-m", "pip", "install", "--upgrade", "pip>=26.2.2"]
+      maxTimeInSeconds: 100
+      maxTimeBetweenOutput: 100
+      userMessageOnFailure: "Failed to upgrade pip"
+    - type: ExecuteCommand
       command: ["{{.SourceDir}}/env/bin/python", "-m", "pip", "install", "-r", "requirements.txt"]
       maxTimeInSeconds: 100
       maxTimeBetweenOutput: 100
@@ -97,4 +102,3 @@ enable_if:
   condition: property
   property: features
   contains_value: PysideAxivion
-

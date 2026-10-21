@@ -1,4 +1,4 @@
-pip>=25
+pip>=26.2.2
 setuptools==78.1.0
 importlib_metadata>=6
 importlib_resources>=5.10.2

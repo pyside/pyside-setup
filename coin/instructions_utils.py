@@ -194,10 +194,13 @@ def call_setup(python_ver, ci, phase, log, buildnro=0):
     if sys.platform == "win32":
         python = Path(get_env_or_raise("PYTHON3_PATH")) / "python.exe"
 
+    upgrade_pip_command = [
+        str(env_python), "-m", "pip", "install", "--upgrade", "pip>=26.2.2"
+    ]
+
     if phase == "BUILD":
         setup_virtualenv(python, exe, env, pip, log, ci)
-        # rhel 9.6 creates somewhat broken pip installation, ensure it's upgraded
-        run_instruction([str(env_python), "-m", "ensurepip", "--upgrade"], "Failed to fix pip")
+        run_instruction(upgrade_pip_command, "Failed to upgrade pip")
         run_instruction(
             [str(env_python), "-m", "pip", "install", "-r", "requirements.txt"],
             "Failed to install dependencies"
@@ -208,13 +211,13 @@ def call_setup(python_ver, ci, phase, log, buildnro=0):
         if ci.HOST_OS == "MacOS" and ci.HOST_ARCH == "ARM64":
             v_env = "virtualenv"
             run_instruction([str(v_env), "-p", str(exe), str(env)], "Failed to create virtualenv")
+            run_instruction(upgrade_pip_command, "Failed to upgrade pip")
             run_instruction(
                 [pip, "install", "-r", "requirements.txt"], "Failed to install dependencies"
             )
         else:
             setup_virtualenv(python, exe, env, pip, log, ci)
-            # rhel 9.6 creates somewhat broken pip installation, ensure it's upgraded
-            run_instruction([str(env_python), "-m", "ensurepip", "--upgrade"], "Failed to fix pip")
+            run_instruction(upgrade_pip_command, "Failed to upgrade pip")
             run_instruction(
                 [str(env_python), "-m", "pip", "install", "-r", "requirements.txt"],
                 "Failed to install dependencies"
