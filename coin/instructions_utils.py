@@ -150,10 +150,7 @@ def setup_virtualenv(python, exe, env, pip, log, ci):
     # Within Ubuntu 24.04 one can't install anything with pip to outside of
     # virtual env. Trust that we already have proper virtualenv installed.
     if os.environ.get("HOST_OSVERSION_COIN") != "ubuntu_24_04":
-        virtualenv_version = "20.7.2"
-        # 20.7.2 is too old for 3.13
-        if sys.version_info[1] > 12:
-            virtualenv_version = "20.32.0"
+        virtualenv_version = "20.32.0"
         run_instruction(
             [str(python), "-m", "pip", "install", "--user", "virtualenv==" + virtualenv_version],
             "Failed to pin virtualenv",
@@ -190,7 +187,7 @@ def call_setup(python_ver, ci, phase, log, buildnro=0):
     remove_tree(env, True)
     # Pinning the virtualenv before creating one
     # Use pip3 if possible while pip seems to install the virtualenv to wrong dir in some OS
-    python = "python3"
+    python = sys.executable
     if sys.platform == "win32":
         python = Path(get_env_or_raise("PYTHON3_PATH")) / "python.exe"
 
