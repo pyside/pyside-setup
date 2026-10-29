@@ -73,11 +73,10 @@ static PyObject *rangeValueToPython(const std::optional<RangeType> &v)
 
 static QList<QHttpHeaderRangeSpec> rangeSequenceToQList(PyObject *sequence)
 {
-    const auto size = PySequence_Size(sequence);
+    Shiboken::PySequenceRange range(sequence);
     QList<QHttpHeaderRangeSpec> result;
-    result.reserve(size);
-    for (Py_ssize_t i = 0; i < size; ++i) {
-        Shiboken::AutoDecRef start(PySequence_GetItem(sequence, i));
+    result.reserve(range.size());
+    for (const auto &start : range) {
         if (start.isNull())
             break; // __getitem__() raised
         result.append(qHttpHeaderRangeFromSequence(start.object()));

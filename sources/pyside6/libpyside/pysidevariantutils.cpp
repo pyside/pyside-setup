@@ -12,6 +12,7 @@
 #include <sbkpep.h>
 #include <sbkpydictrange.h>
 #include <sbkpytuplerange.h>
+#include <sbkpysequencerange.h>
 #include <basewrapper.h>
 
 using namespace Qt::StringLiterals;
@@ -46,17 +47,17 @@ static std::optional<QVariantList> pyListToVariantListHelper(PyObject *list, Py_
 }
 
 // Helper checking for a sequence of Unicode objects
+
+static bool isUnicode(const Shiboken::AutoDecRef &o)
+{
+    return !o.isNull() && PyUnicode_Check(o.object()) != 0;
+}
+
 static bool isStringList(PyObject *list)
 {
-    const Py_ssize_t size = PySequence_Size(list);
-    if (size == 0)
-        return false;
-    for (Py_ssize_t i = 0; i < size; ++i) {
-        Shiboken::AutoDecRef item(PySequence_GetItem(list, i));
-        if (item.isNull() || PyUnicode_Check(item) == 0)
-            return false;
-    }
-    return true;
+    Shiboken::PySequenceRange range(list);
+    return !range.isEmpty()
+           && (std::all_of(range.begin(), range.end(), isUnicode) && PyErr_Occurred() == nullptr);
 }
 
 // Helper to convert to a QStringList

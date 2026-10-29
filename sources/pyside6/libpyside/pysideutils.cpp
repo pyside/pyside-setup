@@ -9,6 +9,7 @@
 #include <pep384ext.h>
 #include <sbkpep.h>
 #include <sbkpydictrange.h>
+#include <sbkpysequencerange.h>
 #include <sbkstaticstrings.h>
 
 #include <QtCore/qdir.h>
@@ -197,12 +198,18 @@ static void formatPyObject(PyObject *obj, QDebug &debug);
 
 static void formatPySequence(PyObject *obj, QDebug &debug)
 {
-    const Py_ssize_t size = PySequence_Size(obj);
-    debug << size << " [";
-    for (Py_ssize_t i = 0; i < size; ++i) {
-        if (i != 0)
+    Shiboken::PySequenceRange range(obj);
+    debug << range.size() << " [";
+    bool first = true;
+    for (const auto &item : range) {
+        if (item.isNull()) { // Debug output must not leave an error set
+            PyErr_Clear();
+            break;
+        }
+        if (first)
+            first = false;
+        else
             debug << ", ";
-        Shiboken::AutoDecRef item(PySequence_GetItem(obj, i));
         formatPyObject(item.object(), debug);
     }
     debug << ']';

@@ -96,6 +96,9 @@
     </value-type>
     <value-type name="QHttp1Configuration"/>
     <value-type name="QHttpHeaderRangeSet">
+        <extra-includes>
+            <include file-name="sbkpysequencerange.h" location="global"/>
+        </extra-includes>
         <inject-code class="native" position="beginning"
                      file="../glue/qtnetwork.cpp" snippet="qhttpheaderrangeset-from-sequence"/>
         <add-function signature="QHttpHeaderRangeSet(PySequence@list@)">
