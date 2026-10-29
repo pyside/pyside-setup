@@ -5,8 +5,7 @@
 #ifndef SBKPYTUPLERANGE_H
 #define SBKPYTUPLERANGE_H
 
-#include "sbkpython.h"
-#include "autodecref.h"
+#include "sbkpyrangespolicies.h"
 
 #include <algorithm>
 #include <cassert>
@@ -118,20 +117,8 @@ private:
     Py_ssize_t m_pos = 0;
 };
 
-// Life time/ownership policies for PyTupleRangeT: Default: raw pointer/non-owning, trivially copyable, zero cost
-struct PyTupleRangeDefaultLifetimePolicy
-{
-    explicit PyTupleRangeDefaultLifetimePolicy(PyObject *) noexcept {}
-};
-
-// AutoDecRef-based life time policy (keep a reference).
-struct AutoDecRefLifetimePolicy : public Shiboken::AutoDecRef
-{
-    explicit AutoDecRefLifetimePolicy(PyObject *o) noexcept : Shiboken::AutoDecRef(Py_XNewRef(o)) {}
-};
-
 // Base template for ranges of the above tuple iterator types.
-template <class Iterator, class LifetimePolicy = PyTupleRangeDefaultLifetimePolicy>
+template <class Iterator, class LifetimePolicy = PyRangeDefaultLifetimePolicy>
 class PyTupleRangeT : private LifetimePolicy
 {
 public:
