@@ -20,6 +20,7 @@
 #include "basewrapper.h"
 #include "autodecref.h"
 #include "sbkpep.h"
+#include "sbkpydictrange.h"
 #include "sbkstring.h"
 #include "sbkstaticstrings.h"
 #include "sbkstaticstrings_p.h"
@@ -538,13 +539,10 @@ static int _finishSignaturesCommon(PyObject *module)
      * and always use our own mapping.
      */
     auto *pyside_globals = signatureGlobals();
-    PyObject *key{};
-    PyObject *func{};
     PyObject *obdict = PyModule_GetDict(module);
-    Py_ssize_t pos = 0;
 
     // Here we collect all global functions to finish our mapping.
-    while (PyDict_Next(obdict, &pos, &key, &func)) {
+    for (auto [key, func] : PyDictRange(obdict)) {
         if (PyCFunction_Check(func))
             if (PyDict_SetItem(pyside_globals->map_dict, func, module) < 0)
                 return -1;

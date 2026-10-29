@@ -19,6 +19,7 @@
 #include <sbkconverter.h>
 #include <sbkenum.h>
 #include <sbkerrors.h>
+#include <sbkpydictrange.h>
 #include <sbkpytuplerange.h>
 #include <sbkstaticstrings.h>
 #include <sbkstring.h>
@@ -995,12 +996,9 @@ void updateSourceObject(PyObject *source)
 
     // PYSIDE-1431: Walk the mro and update. But see PYSIDE-1751 below.
     while ((mroItem.reset(PyIter_Next(mroIterator))), mroItem.object()) {
-        PyObject *key{};
-        PyObject *value{};
-        Py_ssize_t pos = 0;
         auto *type = reinterpret_cast<PyTypeObject *>(mroItem.object());
         Shiboken::AutoDecRef tpDict(PepType_GetDict(type));
-        while (PyDict_Next(tpDict, &pos, &key, &value)) {
+        for (auto [key, value] : Shiboken::PyDictRange(tpDict.object())) {
             if (PyObject_TypeCheck(value, PySideSignal_TypeF())) {
                 // PYSIDE-1751: We only insert an instance into the instance dict, if a signal
                 //              of the same name is in the mro. This is the equivalent action

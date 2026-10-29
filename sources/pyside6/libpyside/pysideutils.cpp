@@ -8,6 +8,7 @@
 #include <helper.h>
 #include <pep384ext.h>
 #include <sbkpep.h>
+#include <sbkpydictrange.h>
 #include <sbkstaticstrings.h>
 
 #include <QtCore/qdir.h>
@@ -209,12 +210,9 @@ static void formatPySequence(PyObject *obj, QDebug &debug)
 
 static void formatPyDict(PyObject *obj, QDebug &debug)
 {
-    PyObject *key{};
-    PyObject *value{};
-    Py_ssize_t pos = 0;
     bool first = true;
     debug << '{';
-    while (PyDict_Next(obj, &pos, &key, &value) != 0) {
+    for (auto [key, value] : Shiboken::PyDictRange(obj)) {
         if (first)
             first = false;
         else

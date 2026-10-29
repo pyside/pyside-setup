@@ -13,6 +13,7 @@
 
 #include "autodecref.h"
 #include "sbkpep.h"
+#include "sbkpydictrange.h"
 #include "sbkstring.h"
 #include "sbkstaticstrings.h"
 #include "sbkstaticstrings_p.h"
@@ -217,10 +218,7 @@ static PyObject *_build_new_entry(PyObject *new_name, PyObject *value)
 int insert_snake_case_variants(PyObject *dict)
 {
     AutoDecRef snake_dict(PyDict_New());
-    PyObject *key{};
-    PyObject *value{};
-    Py_ssize_t pos = 0;
-    while (PyDict_Next(dict, &pos, &key, &value)) {
+    for (auto [key, value] : PyDictRange(dict)) {
         AutoDecRef name(String::getSnakeCaseName(key, true));
         AutoDecRef new_value(_build_new_entry(name, value));
         if (PyDict_SetItem(snake_dict, name, new_value) < 0)

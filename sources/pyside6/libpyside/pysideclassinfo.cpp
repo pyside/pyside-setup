@@ -10,6 +10,7 @@
 #include "dynamicqmetaobject.h"
 
 #include <signature.h>
+#include <sbkpydictrange.h>
 #include <sbktypefactory.h>
 #include <sbkstring.h>
 
@@ -91,22 +92,15 @@ int ClassInfoPrivate::tp_init(PyObject *self, PyObject *args, PyObject *kwds)
 
     auto *pData = DecoratorPrivate::get<ClassInfoPrivate>(self);
 
-    PyObject *key{};
-    PyObject *value{};
-    Py_ssize_t pos = 0;
-
-    // PyDict_Next causes a segfault if kwds is empty
-    if (PyDict_Size(infoDict) > 0) {
-        while (PyDict_Next(infoDict, &pos, &key, &value)) {
-            if (Shiboken::String::check(key) && Shiboken::String::check(value)) {
-                ClassInfo info{Shiboken::String::toCString(key),
-                               Shiboken::String::toCString(value)};
-                pData->m_data.append(info);
-            } else {
-                PyErr_SetString(PyExc_TypeError, "All keys and values provided to ClassInfo() "
-                                                 "must be strings");
-                return -1;
-            }
+    for (auto [key, value] : Shiboken::PyDictRange(infoDict)) {
+        if (Shiboken::String::check(key) && Shiboken::String::check(value)) {
+            ClassInfo info{Shiboken::String::toCString(key),
+                           Shiboken::String::toCString(value)};
+            pData->m_data.append(info);
+        } else {
+            PyErr_SetString(PyExc_TypeError, "All keys and values provided to ClassInfo() "
+                                             "must be strings");
+            return -1;
         }
     }
 

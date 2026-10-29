@@ -10,6 +10,7 @@
 #include <autodecref.h>
 #include <sbkconverter.h>
 #include <sbkpep.h>
+#include <sbkpydictrange.h>
 #include <sbkpytuplerange.h>
 #include <basewrapper.h>
 
@@ -200,7 +201,6 @@ QVariant convertToVariantMap(PyObject *map)
     if (PyDict_Size(map) == 0)
         return result;
 
-    Py_ssize_t pos = 0;
     Shiboken::AutoDecRef keys(PyDict_Keys(map));
     if (!isStringList(keys))
         return {};
@@ -211,9 +211,7 @@ QVariant convertToVariantMap(PyObject *map)
         return {};
     }
 
-    PyObject *key{};
-    PyObject *value{};
-    while (PyDict_Next(map, &pos, &key, &value)) {
+    for (auto [key, value] : Shiboken::PyDictRange(map)) {
         QVariant cppValue;
         converter.toCpp(value, &cppValue);
         result.insert(PySide::pyUnicodeToQString(key), cppValue);

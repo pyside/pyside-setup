@@ -12,6 +12,7 @@
 #include "helper.h"
 #include "sbkstring.h"
 #include "sbkpep.h"
+#include "sbkpydictrange.h"
 #include "voidptr.h"
 
 #include <string>
@@ -815,10 +816,7 @@ bool checkDictTypes(PyTypeObject *keyType, PyTypeObject *valueType, PyObject *py
     if (!PyDict_Check(pyIn))
         return false;
 
-    PyObject *key{};
-    PyObject *value{};
-    Py_ssize_t pos = 0;
-    while (PyDict_Next(pyIn, &pos, &key, &value)) {
+    for (auto [key, value] : PyDictRange(pyIn)) {
         if (!PyObject_TypeCheck(key, keyType))
             return false;
         if (!PyObject_TypeCheck(value, valueType))
@@ -836,10 +834,7 @@ bool checkMultiDictTypes(PyTypeObject *keyType, PyTypeObject *valueType,
     if (!PyDict_Check(pyIn))
         return false;
 
-    PyObject *key{};
-    PyObject *values{};
-    Py_ssize_t pos = 0;
-    while (PyDict_Next(pyIn, &pos, &key, &values)) {
+    for (auto [key, values] : PyDictRange(pyIn)) {
         if (!PyObject_TypeCheck(key, keyType))
             return false;
         if (!PySequence_Check(values))
@@ -862,10 +857,7 @@ bool convertibleDictTypes(const SbkConverter *keyConverter, bool keyCheckExact, 
     assert(pyIn);
     if (!PyDict_Check(pyIn))
         return false;
-    PyObject *key{};
-    PyObject *value{};
-    Py_ssize_t pos = 0;
-    while (PyDict_Next(pyIn, &pos, &key, &value)) {
+    for (auto [key, value] : PyDictRange(pyIn)) {
         if (keyCheckExact) {
             if (!PyObject_TypeCheck(key, keyConverter->pythonType))
                 return false;
@@ -891,10 +883,7 @@ bool convertibleMultiDictTypes(const SbkConverter *keyConverter, bool keyCheckEx
     assert(pyIn);
     if (!PyDict_Check(pyIn))
         return false;
-    PyObject *key{};
-    PyObject *values{};
-    Py_ssize_t pos = 0;
-    while (PyDict_Next(pyIn, &pos, &key, &values)) {
+    for (auto [key, values] : PyDictRange(pyIn)) {
         if (keyCheckExact) {
             if (!PyObject_TypeCheck(key, keyConverter->pythonType))
                 return false;

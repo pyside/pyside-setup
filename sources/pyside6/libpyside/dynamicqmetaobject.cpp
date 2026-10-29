@@ -17,6 +17,7 @@
 #include <gilstate.h>
 #include <sbkpep.h>
 #include <pep384ext.h>
+#include <sbkpydictrange.h>
 #include <sbkpytuplerange.h>
 #include <sbkstaticstrings.h>
 #include <sbkstring.h>
@@ -600,11 +601,7 @@ void MetaObjectBuilderPrivate::parsePythonType(PyTypeObject *type)
     for (PyTypeObject *baseType : basesToCheck) {
         AutoDecRef tpDict(PepType_GetDict(baseType));
         PyObject *attrs = tpDict.object();
-        PyObject *key = nullptr;
-        PyObject *value = nullptr;
-        Py_ssize_t pos = 0;
-
-        while (PyDict_Next(attrs, &pos, &key, &value)) {
+        for (auto [key, value] : PyDictRange(attrs)) {
             if (Signal::checkType(value)) {
                 // Register signals.
                 auto *data = reinterpret_cast<PySideSignal *>(value)->data;
@@ -633,11 +630,7 @@ void MetaObjectBuilderPrivate::parsePythonType(PyTypeObject *type)
     for (PyTypeObject *baseType : basesToCheck) {
         AutoDecRef tpDict(PepType_GetDict(baseType));
         PyObject *attrs = tpDict.object();
-        PyObject *key = nullptr;
-        PyObject *value = nullptr;
-        Py_ssize_t pos = 0;
-
-        while (PyDict_Next(attrs, &pos, &key, &value)) {
+        for (auto [key, value] : PyDictRange(attrs)) {
             if (Property::checkType(value)) {
                 const QByteArray name = String::toCString(key);
                 const int index = m_baseObject->indexOfProperty(name);

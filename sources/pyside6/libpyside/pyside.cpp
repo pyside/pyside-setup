@@ -40,6 +40,7 @@
 #include <sbkstaticstrings.h>
 #include <sbkfeature_base.h>
 #include <sbkmodule.h>
+#include <sbkpydictrange.h>
 #include <sbkpytuplerange.h>
 
 #include <QtCore/qabstracteventdispatcher.h>
@@ -393,14 +394,10 @@ static std::optional<QMetaMethod> findSignal(const QMetaObject *mo,
 bool fillQtProperties(PyObject *qObj, const QMetaObject *metaObj,
                       PyObject *kwds, bool allowErrors)
 {
-
-    PyObject *key{};
-    PyObject *value{};
-    Py_ssize_t pos = 0;
     int flags = currentSelectId(Py_TYPE(qObj));
     int snake_flag = flags & 0x01;
 
-    while (PyDict_Next(kwds, &pos, &key, &value)) {
+    for (auto [key, value] : Shiboken::PyDictRange(kwds)) {
         const QByteArray propName = Shiboken::String::toCString(key);
         QByteArray unmangledName = _sigWithOrigName(propName, snake_flag);
         bool accept = false;

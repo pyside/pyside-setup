@@ -11,6 +11,7 @@
 #include <autodecref.h>
 #include <sbkfeature_base.h>
 #include <sbkpep.h>
+#include <sbkpydictrange.h>
 #include <sbkpytuplerange.h>
 #include <sbkstaticstrings.h>
 #include <sbkstring.h>
@@ -489,12 +490,8 @@ static bool feature_01_addLowerNames(PyTypeObject *type, PyObject *prev_dict, in
     /*
      * Add objects with lower names to `type->tp_dict` from 'prev_dict`.
      */
-    PyObject *key{};
-    PyObject *value{};
-    Py_ssize_t pos = 0;
-
     // We first copy the things over which will not be changed:
-    while (PyDict_Next(prev_dict, &pos, &key, &value)) {
+    for (auto [key, value] : Shiboken::PyDictRange(prev_dict)) {
         if (Py_TYPE(value) != PepMethodDescr_TypePtr
             && Py_TYPE(value) != PepStaticMethod_TypePtr) {
             if (PyDict_SetItem(lower_dict, key, value))

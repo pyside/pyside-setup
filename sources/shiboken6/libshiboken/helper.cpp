@@ -6,6 +6,7 @@
 #include "autodecref.h"
 #include "sbkpepbuffer.h"
 #include "basewrapper_p.h"
+#include "sbkpydictrange.h"
 #include "sbkpytuplerange.h"
 #include "sbkstring.h"
 #include "sbkstaticstrings.h"
@@ -175,12 +176,12 @@ static void formatPyTuple(PyObject *obj, std::ostream &str)
 
 static void formatPyDict(PyObject *obj, std::ostream &str)
 {
-    PyObject *key{};
-    PyObject *value{};
-    Py_ssize_t pos = 0;
+    bool first = true;
     str << '{';
-    while (PyDict_Next(obj, &pos, &key, &value) != 0) {
-        if (pos > 1)
+    for (auto [key, value] : Shiboken::PyDictRange(obj)) {
+        if (first)
+            first = false;
+        else
             str << ", ";
         if (PyUnicode_Check(key))
             str << '"' << Shiboken::String::toCString(key) << '"';

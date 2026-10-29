@@ -8,6 +8,7 @@
 #include "pep384ext.h"
 #include "sbkenum.h"
 #include "sbkerrors.h"
+#include "sbkpydictrange.h"
 #include "sbkpytuplerange.h"
 #include "sbkstring.h"
 #include "sbkstaticstrings.h"
@@ -334,9 +335,7 @@ static PyObject *lookupUnqualifiedOrOldEnum(PyTypeObject *type, PyObject *name)
         if (useFakeShortcuts) {
             AutoDecRef tpDict(PepType_GetDict(type_base));
             auto *dict = tpDict.object();
-            PyObject *key, *value;
-            Py_ssize_t pos = 0;
-            while (PyDict_Next(dict, &pos, &key, &value)) {
+            for (auto [key, value] : PyDictRange(dict)) {
                 /*
                  * Part 2: Check for a duplication into outer scope.
                  * -------------------------------------------------

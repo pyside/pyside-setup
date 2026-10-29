@@ -7,6 +7,7 @@
 #include "autodecref.h"
 #include "sbkstring.h"
 #include "sbkpep.h"
+#include "sbkpydictrange.h"
 #include "sbkstaticstrings_p.h"
 
 #include <algorithm>
@@ -58,11 +59,8 @@ bool parseKeywordArguments(PyObject *kwds,
 {
     if (kwds == nullptr || PyDict_Size(kwds) == 0)
         return true;
-    PyObject *key{};
-    PyObject *value{};
-    Py_ssize_t pos = 0;
     const ArgumentNameIndexMapping *mappingEnd = mapping + size;
-    while (PyDict_Next(kwds, &pos, &key, &value) != 0) {
+    for (auto [key, value] : PyDictRange(kwds)) {
         auto it = findMapping(mapping, mappingEnd, key);
         // Missing key: Create a new dict as error context (see signature/errorhandler.py)
         if (it == mappingEnd) {
@@ -116,11 +114,8 @@ bool parseConstructorKeywordArguments(PyObject *kwds,
 {
     assert(kwds);
     Shiboken::AutoDecRef result(PyDict_New());
-    PyObject *key{};
-    PyObject *value{};
-    Py_ssize_t pos = 0;
     const ArgumentNameIndexMapping *mappingEnd = mapping + size;
-    while (PyDict_Next(kwds, &pos, &key, &value) != 0) {
+    for (auto [key, value] : PyDictRange(kwds)) {
         auto it = findMapping(mapping, mappingEnd, key);
         // Ignore missing key, assuming it is a property to be handled later
         if (it != mappingEnd) {
