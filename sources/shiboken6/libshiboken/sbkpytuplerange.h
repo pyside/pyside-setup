@@ -69,7 +69,10 @@ template <class ValuePolicy>
 class PyTupleIteratorT
 {
 public:
-    using iterator_category = std::input_iterator_tag;
+    // Note: Strictly, LegacyBidirectionalIterator requires a reference type,
+    // but std::prev()/std::advance() dispatch on the category in C++17 and
+    // would loop endlessly for negative distances with input_iterator_tag.
+    using iterator_category = std::bidirectional_iterator_tag;
     using iterator_concept = std::bidirectional_iterator_tag;
 
     using value_type = typename ValuePolicy::value_type;
