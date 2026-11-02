@@ -549,7 +549,7 @@ instructions:
           in_values: [Ubuntu_24_04, RHEL_9_6]
 
     - type: ChangeDirectory
-      directory: "{{.AgentWorkingDir}}/pyside/pyside-setup"
+      directory: "{{.SourceDir}}"
       enable_if:
           condition: property
           property: host.osVersion
