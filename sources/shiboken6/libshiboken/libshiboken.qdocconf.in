@@ -13,8 +13,6 @@ navigation.homepage = https://doc.qt.io/qtforpython-6/
 sources.fileextensions = "*.cpp"
 headers.fileextensions = "*.h"
 
-moduleheader = @CMAKE_CURRENT_SOURCE_DIR@/shiboken.h
-
 documentationinheaders = true
 
 # Include binary for sbkversion.h
