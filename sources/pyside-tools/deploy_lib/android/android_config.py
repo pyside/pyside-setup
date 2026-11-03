@@ -383,6 +383,7 @@ class AndroidConfig(Config):
 
                 file = local_lib.attrib['file']
                 if file.endswith(".so"):
+                    file = self._resolve_lib_name_on_disk(file)
                     # file_name starts with lib and ends with the platform name
                     # eg: lib<lib_name>_x86_64.so
                     file_name = Path(file).stem
@@ -398,6 +399,26 @@ class AndroidConfig(Config):
                             plugins.add(plugin_name)
 
         return list(local_libs), list(plugins)
+
+    def _resolve_lib_name_on_disk(self, file: str) -> str:
+        """Return the lib path from the dependency xml, or the other name if only that exists.
+
+        Qt lists some libs (eg: FFmpeg) with the ABI suffix, but ships them without it.
+        androiddeployqt falls back to the name that exists in the same way.
+        """
+        qt_dir = self.qt_libs_path.parent
+        if (qt_dir / file).exists():
+            return file
+
+        abi_suffix = f"_{self.arch}.so"
+        if file.endswith(abi_suffix):
+            alternative = file[:-len(abi_suffix)] + ".so"
+        else:
+            alternative = file[:-len(".so")] + abi_suffix
+
+        if (qt_dir / alternative).exists():
+            return alternative
+        return file
 
     def _find_plugin_dependencies(self, dependent_plugins: list[str]):
         # The `bundled` element in the dependency xml files points to the folder where
