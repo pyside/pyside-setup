@@ -88,7 +88,7 @@ parser/enumvalue.cpp parser/enumvalue.h
 parser/typeinfo.cpp parser/typeinfo.h
 )
 
-find_package(LibXml2 2.6.32)
+find_package(LibXml2 2.15.2)
 find_package(LibXslt 1.1.19)
 
 set(HAS_LIBXSLT 0)
