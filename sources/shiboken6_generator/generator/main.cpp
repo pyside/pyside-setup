@@ -16,6 +16,7 @@
 #include <optionsparser.h>
 #include <reporthandler.h>
 #include <typedatabase.h>
+#include <xmlutils.h>
 
 #include <QtCore/qdir.h>
 #include <QtCore/qfile.h>
@@ -258,8 +259,10 @@ void printUsage()
         << ShibokenGenerator::options();
 
 #ifdef DOCSTRINGS_ENABLED
-    s << "\nDocumentation Generator options:\n\n"
-        << generatorOptions << QtDocGenerator::options();
+    s << "\nDocumentation Generator options";
+    if (!XQuery::isLibXmlEnabled())
+        s << " (doxygen/XSLT modifications disabled)";
+    s << ":\n\n" << generatorOptions << QtDocGenerator::options();
 #endif
 }
 

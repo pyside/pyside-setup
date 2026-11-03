@@ -20,6 +20,8 @@ public:
 
     static std::shared_ptr<XQuery> create(const QString &focus, QString *errorMessage);
 
+    static bool isLibXmlEnabled();
+
 protected:
     XQuery();
 

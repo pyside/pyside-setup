@@ -33,6 +33,7 @@
 #include <typesystemtypeentry.h>
 #include <qtdocparser.h>
 #include <doxygenparser.h>
+#include <xmlutils.h>
 
 
 #include <QtCore/qtextstream.h>
@@ -504,7 +505,8 @@ void QtDocGenerator::writeDetailedDescription(TextStream &s,
                              parsedImages);
     if (!writeInjectDocumentation(s, TypeSystem::DocModificationReplace, metaClass,
                                   parsedImages)) {
-        QtXmlToSphinxOptions options{.headingOffset = 3};
+        QtXmlToSphinxOptions options;
+        options.headingOffset = 3;
         writeFormattedDetailedText(s, documentation, options, scope, parsedImages);
     }
     writeInjectDocumentation(s, TypeSystem::DocModificationAppend, metaClass,
@@ -1415,7 +1417,8 @@ void QtDocGenerator::writeModuleDocumentation()
         } else if (!webXmlModuleDoc.isEmpty()) {
             // try the normal way
             if (webXmlModuleDoc.format() == DocumentationFormat::Native) {
-                QtXmlToSphinxOptions options{.headingOffset = 3};
+                QtXmlToSphinxOptions options;
+                options.headingOffset = 3;
                 QtXmlToSphinx x(this, m_options.parameters, options, webXmlModuleDoc.detailed(), context);
                 s << x;
                 parsedImages += x.images();
@@ -1683,8 +1686,13 @@ bool QtDocGeneratorOptionsParser::handleOption(const QString &key, const QString
     }
     if (key == u"doc-parser") {
         qCDebug(lcShibokenDoc).noquote().nospace() << "doc-parser: " << value;
-        if (value == u"doxygen")
+        if (value == u"doxygen") {
+            if (!XQuery::isLibXmlEnabled()) {
+                qWarning("doxygen requires libxml/libxslt which was not found.");
+                return false;
+            }
             m_options->doxygen = true;
+        }
         return true;
     }
     if (key == additionalDocumentationOption) {
