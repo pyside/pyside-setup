@@ -97,9 +97,8 @@ if (LIBXSLT_FOUND AND LIBXML2_FOUND)
 endif()
 
 if(NOT HAS_LIBXSLT)
-    set(DISABLE_DOCSTRINGS TRUE)
     message(WARNING
-            "Documentation will not be built due to missing dependency (libxslt not found).")
+            "Doxygen/XSLT documentation modification will not work due to missing dependency (libxslt not found).")
 endif()
 
 # Export to parent scope so that generator/CMakeLists.txt gets it

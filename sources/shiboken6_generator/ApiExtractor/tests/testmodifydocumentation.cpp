@@ -12,6 +12,7 @@
 #include <documentation.h>
 #include <modifications.h>
 #include <qtdocparser.h>
+#include <xmlutils.h>
 
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qtemporarydir.h>
@@ -21,6 +22,9 @@ using namespace Qt::StringLiterals;
 
 void TestModifyDocumentation::testModifyDocumentation()
 {
+    if (!XQuery::isLibXmlEnabled())
+        QSKIP("Requires libxml/libxslt.");
+
     const char cppCode[] = "struct B { void b(); }; class A {};\n";
     const char xmlCode[] =
 R"(<typesystem package="Foo">

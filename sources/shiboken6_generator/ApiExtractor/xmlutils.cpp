@@ -32,6 +32,15 @@ std::shared_ptr<XQuery> XQuery::create(const QString &focus, QString *errorMessa
 #endif
 }
 
+bool XQuery::isLibXmlEnabled()
+{
+#ifdef HAVE_LIBXSLT
+    return true;
+#else
+    return false;
+#endif
+}
+
 QString xsl_transform(const QString &xml, const QString &xsl, QString *errorMessage)
 {
 #ifdef HAVE_LIBXSLT
