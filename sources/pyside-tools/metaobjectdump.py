@@ -109,6 +109,14 @@ def _bool_value(node: ast.expr) -> bool | None:
     return None
 
 
+def _accessor_name(node: ast.expr | None, default: str) -> str | None:
+    """Return the name of a Property accessor, None if there is no accessor, or
+       ``default`` for an accessor that has no name, such as a lambda."""
+    if node is None or (isinstance(node, ast.Constant) and node.value is None):
+        return None
+    return node.id if isinstance(node, ast.Name) else default
+
+
 def _parse_property_kwargs(keywords: list[ast.keyword], prop: PropertyEntry):
     """Parse keyword arguments of @Property"""
     for k in keywords:
@@ -386,7 +394,7 @@ class MetaObjectDumpVisitor(ast.NodeVisitor):
 
         if isinstance(node, ast.Call):
             name = _name(node.func)
-            if name == "Property":  # Property getter
+            if name == "Property" or name == "QtCore.Property":  # Property getter
                 if node.args:  # 1st is type/type string
                     type = _parse_pyside_type(node.args[0])
                     prop = self._create_property_entry(func_name, type,
@@ -411,10 +419,14 @@ class MetaObjectDumpVisitor(ast.NodeVisitor):
                               "returnType": "void"}
             self._signals.append(signal)
         elif func_name == "Property" or func_name == "QtCore.Property":
-            type = _python_to_cpp_type(call.args[0].id)
-            prop = self._create_property_entry(var_name, type, call.args[1].id)
-            if len(call.args) > 2:
-                prop["write"] = call.args[2].id
+            type = _parse_pyside_type(call.args[0])
+            keywords = {k.arg: k.value for k in call.keywords}
+            fget = call.args[1] if len(call.args) > 1 else keywords.get("fget")
+            fset = call.args[2] if len(call.args) > 2 else keywords.get("fset")
+            prop = self._create_property_entry(var_name, type, _accessor_name(fget, var_name))
+            setter = _accessor_name(fset, var_name)
+            if setter:
+                prop["write"] = setter
             _parse_property_kwargs(call.keywords, prop)
             self._properties.append(prop)
         elif func_name == "ListProperty" or func_name == "QtCore.ListProperty":
