@@ -34,6 +34,8 @@ static std::optional<QVariantList> pyListToVariantListHelper(PyObject *list, Py_
     }
     for (Py_ssize_t i = 0; i < size; ++i) {
         Shiboken::AutoDecRef pyItem(PySequence_GetItem(list, i));
+        if (pyItem.isNull()) // In case a custom __getitem__() raises
+            break;
         QVariant item;
         converter.toCpp(pyItem.object(), &item);
         result.append(item);
@@ -49,7 +51,7 @@ static bool isStringList(PyObject *list)
         return false;
     for (Py_ssize_t i = 0; i < size; ++i) {
         Shiboken::AutoDecRef item(PySequence_GetItem(list, i));
-        if (PyUnicode_Check(item) == 0)
+        if (item.isNull() || PyUnicode_Check(item) == 0)
             return false;
     }
     return true;
@@ -75,6 +77,8 @@ static QVariant convertToValueList(PyObject *list)
     Q_ASSERT(PySequence_Size(list) >= 0);
 
     Shiboken::AutoDecRef element(PySequence_GetItem(list, 0));
+    if (element.isNull())
+        return {};
 
     auto *type = reinterpret_cast<PyTypeObject *>(element.object());
     QMetaType metaType = PySide::Variant::resolveMetaType(type);
@@ -182,6 +186,9 @@ QVariant convertToVariantList(PyObject *list)
         if (stringListO.has_value())
             return {stringListO.value()};
     }
+
+    if (PyErr_Occurred() != nullptr) // In case a custom __getitem__() raises
+        return {};
 
     if (QVariant valueList = convertToValueList(list); valueList.isValid())
         return valueList;
