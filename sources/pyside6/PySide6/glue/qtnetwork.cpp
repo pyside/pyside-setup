@@ -56,7 +56,11 @@ static QHttpHeaderRangeSpec qHttpHeaderRangeFromSequence(PyObject *t)
         return {};
 
     Shiboken::AutoDecRef start(PySequence_GetItem(t, 0));
+    if (start.isNull())
+        return {}; // __getitem__() raised
     Shiboken::AutoDecRef end(PySequence_GetItem(t, 1));
+    if (end.isNull())
+        return {};
     return {rangeValueFromPython(start), rangeValueFromPython(end)};
 }
 
@@ -74,6 +78,8 @@ static QList<QHttpHeaderRangeSpec> rangeSequenceToQList(PyObject *sequence)
     result.reserve(size);
     for (Py_ssize_t i = 0; i < size; ++i) {
         Shiboken::AutoDecRef start(PySequence_GetItem(sequence, i));
+        if (start.isNull())
+            break; // __getitem__() raised
         result.append(qHttpHeaderRangeFromSequence(start.object()));
     }
     return result;
