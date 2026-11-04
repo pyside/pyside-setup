@@ -396,8 +396,8 @@ class MetaObjectDumpVisitor(ast.NodeVisitor):
             name = _name(node.func)
             if name == "Property" or name == "QtCore.Property":  # Property getter
                 if node.args:  # 1st is type/type string
-                    type = _parse_pyside_type(node.args[0])
-                    prop = self._create_property_entry(func_name, type,
+                    arg_type = _parse_pyside_type(node.args[0])
+                    prop = self._create_property_entry(func_name, arg_type,
                                                        func_name)
                     _parse_property_kwargs(node.keywords, prop)
                     self._properties.append(prop)
@@ -419,20 +419,20 @@ class MetaObjectDumpVisitor(ast.NodeVisitor):
                               "returnType": "void"}
             self._signals.append(signal)
         elif func_name == "Property" or func_name == "QtCore.Property":
-            type = _parse_pyside_type(call.args[0])
+            arg_type = _parse_pyside_type(call.args[0])
             keywords = {k.arg: k.value for k in call.keywords}
             fget = call.args[1] if len(call.args) > 1 else keywords.get("fget")
             fset = call.args[2] if len(call.args) > 2 else keywords.get("fset")
-            prop = self._create_property_entry(var_name, type, _accessor_name(fget, var_name))
+            prop = self._create_property_entry(var_name, arg_type, _accessor_name(fget, var_name))
             setter = _accessor_name(fset, var_name)
             if setter:
                 prop["write"] = setter
             _parse_property_kwargs(call.keywords, prop)
             self._properties.append(prop)
         elif func_name == "ListProperty" or func_name == "QtCore.ListProperty":
-            type = _python_to_cpp_type(call.args[0].id)
-            type = f"QQmlListProperty<{type}>"
-            prop = self._create_property_entry(var_name, type)
+            arg_type = _python_to_cpp_type(call.args[0].id)
+            arg_type = f"QQmlListProperty<{arg_type}>"
+            prop = self._create_property_entry(var_name, arg_type)
             self._properties.append(prop)
 
     def visit_Import(self, node):
