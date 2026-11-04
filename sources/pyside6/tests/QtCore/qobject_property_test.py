@@ -14,10 +14,22 @@ sys.path.append(os.fspath(Path(__file__).resolve().parents[1]))
 from init_paths import init_test_paths
 init_test_paths(False)
 
-from PySide6.QtCore import QObject, Property, Signal
+from PySide6.QtCore import QObject, QPoint, Property, Signal
 
 
 Point = NamedTuple("Point", [("x", float), ("y", float)])
+
+
+class EvilList(list):
+    """A list whose __getitem__ raises."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fail_row = 1
+
+    def __getitem__(self, row):
+        if row == self.fail_row:
+            raise IndexError
+        return super().__getitem__(row)
 
 
 class MyObjectWithNotifyProperty(QObject):
@@ -131,6 +143,22 @@ class VariantPropertyTest(unittest.TestCase):
         # Named Tuple (PYSIDE-3244)
         to.setProperty("testProperty", [Point(1, 2)])
         self.assertEqual(type(to.get_property()[0]), Point)
+
+    def testGetItemRaises(self):
+        """Ensure there is no crash when __getitem__ raises."""
+        to = TestVariantPropertyObject()
+        with self.assertRaises(IndexError):
+            el = EvilList([1, 2])
+            to.setProperty("testProperty", el)
+
+        with self.assertRaises(IndexError):
+            el = EvilList(["s1", "s2"])  # Trigger the isStringList check
+            to.setProperty("testProperty", el)
+
+        with self.assertRaises(IndexError):
+            el = EvilList([QPoint(1, 2), QPoint(1, 2)])  # convertToValueList() path
+            el.fail_row = 0
+            to.setProperty("testProperty", el)
 
 
 if __name__ == '__main__':
