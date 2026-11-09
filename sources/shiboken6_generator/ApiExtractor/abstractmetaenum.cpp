@@ -317,6 +317,16 @@ void AbstractMetaEnum::setSigned(bool s)
         d->m_signed = s;
 }
 
+static inline bool isNegativeValue(const AbstractMetaEnumValue &v)
+{
+    return v.value().isNegative();
+}
+
+bool AbstractMetaEnum::hasNegativeValues() const
+{
+    return std::any_of(d->m_enumValues.cbegin(), d->m_enumValues.cend(), isNegativeValue);
+}
+
 QString AbstractMetaEnum::underlyingType() const
 {
     return d->m_underlyingType;

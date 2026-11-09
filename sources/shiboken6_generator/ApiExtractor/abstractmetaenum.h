@@ -103,6 +103,8 @@ public:
     bool isSigned() const;
     void setSigned(bool s);
 
+    bool hasNegativeValues() const;
+
     QString underlyingType() const;
     void setUnderlyingType(const QString &underlyingType);
 
