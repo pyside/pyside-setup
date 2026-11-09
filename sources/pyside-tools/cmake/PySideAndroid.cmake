@@ -27,7 +27,6 @@ macro(create_and_install_qt_javabindings)
         set(ANDROID_SDK_API_LEVEL "android-${CMAKE_ANDROID_API}")
     endif()
     set(sdk_jar_location "${ANDROID_SDK_ROOT}/platforms/${ANDROID_SDK_API_LEVEL}/android.jar")
-    file(GLOB sources_list LIST_DIRECTORIES true "${ANDROID_SDK_ROOT}/platforms/${ANDROID_SDK_API_LEVEL}/*")
     if (NOT EXISTS "${sdk_jar_location}")
         message(FATAL_ERROR "Could not locate Android SDK jar for api '${ANDROID_SDK_API_LEVEL}' - ${sdk_jar_location}")
     endif()
@@ -40,7 +39,6 @@ macro(create_and_install_qt_javabindings)
         message(FATAL_ERROR "${qt_jar_location} does not exist. Qt6 installation maybe corrupted.")
     endif()
 
-    # to be done
     list(APPEND included_jars ${sdk_jar_location} ${qt_jar_location})
 
     qt_internal_add_jar(Qt${QT_MAJOR_VERSION}AndroidBindings
