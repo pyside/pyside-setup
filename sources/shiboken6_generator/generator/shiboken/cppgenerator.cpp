@@ -5669,6 +5669,11 @@ bool CppGenerator::writeEnumInitialization(TextStream &s, const char *enclosing,
 
     int targetHexLen = 0;
     QString usedIntType = userType;
+    if (usedIntType.isEmpty() && cppEnum.hasNegativeValues()) {
+        usedIntType = cppEnum.underlyingType(); // Use all bits for values like -1
+        if (usedIntType == "bool"_L1) // Observed in Qt, QAbstract3DSeries
+            usedIntType = u"int8_t"_s;
+    }
     if (usedIntType.isEmpty()) {
         const int usedBits = cppEnum.usedBits();
         targetHexLen = usedBits / 4;
