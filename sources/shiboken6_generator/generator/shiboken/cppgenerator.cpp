@@ -4543,7 +4543,7 @@ void CppGenerator::writeEnumConverterInitialization(TextStream &s, const Abstrac
     static const char enumPythonVar[] = "EType";
 
     s << "// Register converter for enum '" << enumType->qualifiedCppName()
-        << "'.\n{\n" << indent;
+        << "'.\n";
 
     const QString typeName = fixedCppTypeName(enumType);
     s << "SbkConverter *converter = Shiboken::Conversions::createConverter("
@@ -4573,8 +4573,6 @@ void CppGenerator::writeEnumConverterInitialization(TextStream &s, const Abstrac
 
     s << "Shiboken::Enum::setTypeConverter(" << enumPythonVar
         << ", converter, " << flagsConverter << ");\n";
-
-    s << outdent << "}\n";
 }
 
 QString CppGenerator::writeContainerConverterInitialization(TextStream &s,
@@ -5658,33 +5656,16 @@ bool CppGenerator::writeEnumInitialization(TextStream &s, const char *enclosing,
 {
     const auto enclosingClass = cppEnum.targetLangEnclosingClass();
     EnumTypeEntryCPtr enumTypeEntry = cppEnum.typeEntry();
+    const QString userType = enumTypeEntry->cppType();
 
-    s << "// Initialization of ";
+    s << "{\n" << indent << "// Initialization of ";
     s << (cppEnum.isAnonymous() ? "anonymous enum identified by enum value" : "enum");
-    s << " '" << cppEnum.name() << "'.\n";
+    s << " '" << cppEnum.name() << "' ("
+        << (userType.isEmpty() ? cppEnum.underlyingType() : userType) << ").\n";
 
-    const QString userType = cppEnum.typeEntry()->cppType();
     const bool isSigned = cppEnum.isSigned() && !userType.contains(u"unsigned"_s);
     const bool isAccessible = !avoidProtectedHack() || !cppEnum.isProtected();
     const auto enumValues = cppEnum.nonRejectedValues();
-
-    const QString prefix = cppEnum.name();
-
-    const QString intType = userType.isEmpty() ? cppEnum.underlyingType() : userType;
-
-    // Create a list of values
-    const QString initializerValues = prefix + u"_InitializerValues"_s;
-    const QString initializerName = prefix + u"_Initializer"_s;
-
-    // Build maybe array of enum names.
-    if (cppEnum.enumKind() != AnonymousEnum) {
-        s << "const char *" << initializerName << "[] = {\n" << indent;
-        for (const auto &enumValue : enumValues) {
-            QString name = mangleName(enumValue.name());
-            s << '\"' << name << "\",\n";
-        }
-        s << "nullptr};\n" << outdent;
-    }
 
     int targetHexLen = 0;
     QString usedIntType = userType;
@@ -5693,9 +5674,17 @@ bool CppGenerator::writeEnumInitialization(TextStream &s, const char *enclosing,
         targetHexLen = usedBits / 4;
         usedIntType = AbstractMetaEnum::intTypeForSize(usedBits, cppEnum.isSigned());
     }
+    s << "using _ValueType = " << usedIntType << ";\n";
 
-    if (usedIntType != intType)
-        s << "// \"" << usedIntType << "\" used instead of \"" << intType << "\"\n";
+    // Build maybe array of enum names.
+    if (cppEnum.enumKind() != AnonymousEnum) {
+        s << "const char *names[] = {\n" << indent;
+        for (const auto &enumValue : enumValues) {
+            QString name = mangleName(enumValue.name());
+            s << '\"' << name << "\",\n";
+        }
+        s << "nullptr};\n" << outdent;
+    }
 
     // Calculating formatting columns
     QString enumValuePrefix;
@@ -5708,14 +5697,14 @@ bool CppGenerator::writeEnumInitialization(TextStream &s, const char *enclosing,
 
     // Build array of enum values
     if (enumValues.isEmpty()) {
-        s << "const " << usedIntType << " *" << initializerValues << "{};\n";
+        s << "const _ValueType *values{};\n";
     } else {
         QStringList values;
         values.reserve(enumValues.size());
-        s << "constexpr " << usedIntType << ' ' << initializerValues << "[] = {\n" << indent;
+        s << "constexpr _ValueType values[] = {\n" << indent;
         for (qsizetype idx = 0, last = enumValues.size() - 1; idx <= last; ++idx) {
             const auto &enumValue = enumValues.at(idx);
-            QString line = usedIntType + u'(' + (isAccessible
+            QString line = "_ValueType("_L1 + (isAccessible
                                ? enumValuePrefix + enumValue.name()
                                : enumValue.value().toString()) + u')';
             if (idx != last)
@@ -5739,7 +5728,7 @@ bool CppGenerator::writeEnumInitialization(TextStream &s, const char *enclosing,
         int idx = 0;
         for (const auto &enumValue : enumValues) {
             const QString mangledName = mangleName(enumValue.name());
-            const QString pyValue = initializerValues + u'[' + QString::number(idx++) + u']';
+            const QString pyValue = "values["_L1 + QString::number(idx++) + u']';
             if (enclosingClass) {
                 s << "tpDict.reset(PepType_GetDict(reinterpret_cast<PyTypeObject *>("
                     << enclosing << ")));\n"
@@ -5762,14 +5751,14 @@ bool CppGenerator::writeEnumInitialization(TextStream &s, const char *enclosing,
             << "createPythonEnum"
             << '(' << enclosing << ",\n" << indent
             << '"' << packageLevel << ':' << getClassTargetFullName(cppEnum) << "\",\n"
-            << initializerName << ", " << initializerValues << ");\n" << outdent
+            << "names, values);\n" << outdent
             << typeInitStruct(enumTypeEntry) << ".type = EType;\n";
         etypeUsed = true;
     }
 
-    if (cppEnum.typeEntry()->flags()) {
+    if (auto flags = enumTypeEntry->flags()) {
         s << "// PYSIDE-1735: Mapping the flags class to the same enum class.\n"
-            << typeInitStruct(cppEnum.typeEntry()->flags()) << ".type =\n"
+            << typeInitStruct(flags) << ".type =\n"
             << indent << "EType;\n" << outdent;
     }
     writeEnumConverterInitialization(s, cppEnum);
@@ -5777,7 +5766,7 @@ bool CppGenerator::writeEnumInitialization(TextStream &s, const char *enclosing,
     s << "// End of '" << cppEnum.name() << "' enum";
     if (cppEnum.typeEntry()->flags())
         s << "/flags";
-    s << ".\n\n";
+    s << ".\n" << outdent << "}\n\n";
 
     return etypeUsed;
 }
