@@ -15,6 +15,7 @@
 #include "sbktypefactory.h"
 
 #include <cstring>
+#include <iostream>
 
 using namespace Shiboken;
 
@@ -351,12 +352,25 @@ static void setModuleAndQualnameOnType(PyObject *type, const char *fullName)
     PyObject_SetAttr(type, Shiboken::PyMagicName::qualname(), qualname);
 }
 
-static PyTypeObject *createEnumForPython(PyObject *scopeOrModule,
-                                         const char *fullName,
-                                         PyObject *pyEnumItems)
+struct EnumContext
 {
+    PyObject *scopeOrModule{};
+    const char *fullName{};
+    const char *nameC{};
+    AutoDecRef name;
+    AutoDecRef PyEnumType;
+    bool isFlag{false};
+};
+
+EnumContext createEnumContext(PyObject *scopeOrModule, const char *fullName)
+{
+    EnumContext result;
+    result.scopeOrModule = scopeOrModule;
+    result.fullName = fullName;
+
     const char *dot = std::strrchr(fullName, '.');
-    AutoDecRef name(Shiboken::String::fromCString(dot ? dot + 1 : fullName));
+    result.nameC = dot ? dot + 1 : fullName;
+    result.name.reset(Shiboken::String::fromCString(result.nameC));
 
     static PyObject *enumName = String::createStaticString("IntEnum");
     if (PyType_Check(scopeOrModule)) {
@@ -365,41 +379,49 @@ static PyTypeObject *createEnumForPython(PyObject *scopeOrModule,
         auto *sotp = PepType_SOTP(type);
         if (!sotp->enumFlagsDict)
             initEnumFlagsDict(type);
-        enumName = PyDict_GetItem(sotp->enumTypeDict, name);
+        enumName = PyDict_GetItem(sotp->enumTypeDict, result.name.object());
     }
 
     SBK_UNUSED(getPyEnumMeta()); // enforce PyEnumModule creation
     auto *globals = enumGlobals();
     assert(globals->PyEnumModule != nullptr);
-    AutoDecRef PyEnumType(PyObject_GetAttr(globals->PyEnumModule, enumName));
-    assert(PyEnumType.object());
-    bool isFlag = PyObject_IsSubclass(PyEnumType, globals->PyFlag);
+    result.PyEnumType.reset(PyObject_GetAttr(globals->PyEnumModule, enumName));
+    assert(result.PyEnumType.object());
+    result.isFlag = PyObject_IsSubclass(result.PyEnumType, globals->PyFlag);
 
     // See if we should use the Int versions of the types, again
-    bool useIntInheritance = Enum::enumOption & Enum::ENOPT_INHERIT_INT;
-    if (useIntInheritance) {
-        auto *surrogate = PyObject_IsSubclass(PyEnumType, globals->PyFlag) ? globals->PyIntFlag : globals->PyIntEnum;
+    if ((Enum::enumOption & Enum::ENOPT_INHERIT_INT) != 0) {
+        auto *surrogate = result.isFlag ? globals->PyIntFlag : globals->PyIntEnum;
         Py_INCREF(surrogate);
-        PyEnumType.reset(surrogate);
+        result.PyEnumType.reset(surrogate);
     }
 
+    return result;
+}
+
+static PyTypeObject *createEnumForPython(const EnumContext &enumContext,
+                                         PyObject *pyEnumItems)
+{
+    auto *globals = enumGlobals();
+
+    // See if we should use the Int versions of the types, again
+
     // Walk the enumItemStrings and create a Python enum type.
-    auto *pyName = name.object();
 
     // We now create the new type. Since Python 3.11, we need to pass in
     // `boundary=KEEP` because the default STRICT crashes on us.
     // See  QDir.Filter.Drives | QDir.Filter.Files
-    AutoDecRef callArgs(Py_BuildValue("(OO)", pyName, pyEnumItems));
+    AutoDecRef callArgs(Py_BuildValue("(OO)", enumContext.name.object(), pyEnumItems));
     AutoDecRef callDict(PyDict_New());
     static PyObject *boundary = String::createStaticString("boundary");
     if (globals->PyFlag_KEEP)
         PyDict_SetItem(callDict, boundary, globals->PyFlag_KEEP);
-    auto *obNewType = PyObject_Call(PyEnumType, callArgs, callDict);
-    if (!obNewType || PyObject_SetAttr(scopeOrModule, pyName, obNewType) < 0)
+    auto *obNewType = PyObject_Call(enumContext.PyEnumType.object(), callArgs, callDict);
+    if (!obNewType || PyObject_SetAttr(enumContext.scopeOrModule, enumContext.name.object(), obNewType) < 0)
         return nullptr;
 
     // For compatibility with Qt enums, provide a permissive missing method for (Int)?Enum.
-    if (!isFlag) {
+    if (!enumContext.isFlag) {
         bool supportMissing = !(Enum::enumOption & Enum::ENOPT_NO_MISSING);
         if (supportMissing) {
             AutoDecRef enum_missing(create_missing_func(obNewType));
@@ -407,7 +429,7 @@ static PyTypeObject *createEnumForPython(PyObject *scopeOrModule,
         }
     }
 
-    setModuleAndQualnameOnType(obNewType, fullName);
+    setModuleAndQualnameOnType(obNewType, enumContext.fullName);
 
     // See if we should re-introduce shortcuts in the enclosing object.
     const bool useGlobalShortcut = (Enum::enumOption & Enum::ENOPT_GLOBAL_SHORTCUT) != 0;
@@ -417,11 +439,11 @@ static PyTypeObject *createEnumForPython(PyObject *scopeOrModule,
         AutoDecRef values(PyObject_GetAttr(obNewType, PyMagicName::members()));
         AutoDecRef mapIterator(PyObject_GetIter(values));
         AutoDecRef mapKey{};
-        bool isModule = PyModule_Check(scopeOrModule);
+        bool isModule = PyModule_Check(enumContext.scopeOrModule);
         while ((mapKey.reset(PyIter_Next(mapIterator))), mapKey.object()) {
             if ((useGlobalShortcut && isModule) || (useScopedShortcut && !isModule)) {
                 AutoDecRef value(PyObject_GetItem(values, mapKey));
-                if (PyObject_SetAttr(scopeOrModule, mapKey, value) < 0)
+                if (PyObject_SetAttr(enumContext.scopeOrModule, mapKey, value) < 0)
                     return nullptr;
             }
         }
@@ -444,8 +466,8 @@ static PyObject *toPyObject(IntT v)
 }
 
 template <typename IntT>
-static PyTypeObject *createPythonEnumHelper(PyObject *module,
-    const char *fullName, const char *enumItemStrings[], const IntT enumValues[])
+static PyTypeObject *createPythonEnumHelper(const EnumContext &enumContext,
+                                            const char *enumItemStrings[], const IntT enumValues[])
 {
     AutoDecRef args(PyList_New(0));
     auto *pyEnumItems = args.object();
@@ -458,7 +480,7 @@ static PyTypeObject *createPythonEnumHelper(PyObject *module,
         PyTuple_SetItem(key_value, 1, value);
         PyList_Append(pyEnumItems, key_value);
     }
-    return createEnumForPython(module, fullName, pyEnumItems);
+    return createEnumForPython(enumContext, pyEnumItems);
 }
 
 // Now we have to concretize these functions explicitly,
@@ -467,49 +489,57 @@ static PyTypeObject *createPythonEnumHelper(PyObject *module,
 PyTypeObject *createPythonEnum(PyObject *module,
     const char *fullName, const char *enumItemStrings[], const int64_t enumValues[])
 {
-    return createPythonEnumHelper(module, fullName, enumItemStrings, enumValues);
+    const EnumContext context = createEnumContext(module, fullName);
+    return createPythonEnumHelper(context, enumItemStrings, enumValues);
 }
 
 PyTypeObject *createPythonEnum(PyObject *module,
     const char *fullName, const char *enumItemStrings[], const uint64_t enumValues[])
 {
-    return createPythonEnumHelper(module, fullName, enumItemStrings, enumValues);
+    const EnumContext context = createEnumContext(module, fullName);
+    return createPythonEnumHelper(context, enumItemStrings, enumValues);
 }
 
 PyTypeObject *createPythonEnum(PyObject *module,
     const char *fullName, const char *enumItemStrings[], const int32_t enumValues[])
 {
-    return createPythonEnumHelper(module, fullName, enumItemStrings, enumValues);
+    const EnumContext context = createEnumContext(module, fullName);
+    return createPythonEnumHelper(context, enumItemStrings, enumValues);
 }
 
 PyTypeObject *createPythonEnum(PyObject *module,
     const char *fullName, const char *enumItemStrings[], const uint32_t enumValues[])
 {
-    return createPythonEnumHelper(module, fullName, enumItemStrings, enumValues);
+    const EnumContext context = createEnumContext(module, fullName);
+    return createPythonEnumHelper(context, enumItemStrings, enumValues);
 }
 
 PyTypeObject *createPythonEnum(PyObject *module,
     const char *fullName, const char *enumItemStrings[], const int16_t enumValues[])
 {
-    return createPythonEnumHelper(module, fullName, enumItemStrings, enumValues);
+    const EnumContext context = createEnumContext(module, fullName);
+    return createPythonEnumHelper(context, enumItemStrings, enumValues);
 }
 
 PyTypeObject *createPythonEnum(PyObject *module,
     const char *fullName, const char *enumItemStrings[], const uint16_t enumValues[])
 {
-    return createPythonEnumHelper(module, fullName, enumItemStrings, enumValues);
+    const EnumContext context = createEnumContext(module, fullName);
+    return createPythonEnumHelper(context, enumItemStrings, enumValues);
 }
 
 PyTypeObject *createPythonEnum(PyObject *module,
     const char *fullName, const char *enumItemStrings[], const int8_t enumValues[])
 {
-    return createPythonEnumHelper(module, fullName, enumItemStrings, enumValues);
+    const EnumContext context = createEnumContext(module, fullName);
+    return createPythonEnumHelper(context, enumItemStrings, enumValues);
 }
 
 PyTypeObject *createPythonEnum(PyObject *module,
     const char *fullName, const char *enumItemStrings[], const uint8_t enumValues[])
 {
-    return createPythonEnumHelper(module, fullName, enumItemStrings, enumValues);
+    const EnumContext context = createEnumContext(module, fullName);
+    return createPythonEnumHelper(context, enumItemStrings, enumValues);
 }
 
 /*!
