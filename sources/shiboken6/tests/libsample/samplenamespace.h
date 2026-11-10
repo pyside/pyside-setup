@@ -5,7 +5,6 @@
 #define SAMPLENAMESPACE_H
 
 #include "libsamplemacros.h"
-#include "samplenamespace.h"
 #include "str.h"
 #include "point.h"
 #include "objecttype.h"
