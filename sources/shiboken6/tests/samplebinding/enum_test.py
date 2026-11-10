@@ -90,7 +90,7 @@ class EnumTest(unittest.TestCase):
            (see GH-107538/PR132273). As a result, they need to be converted to their unsigned
            counterparts to maintain the desired behavior in C++."""
         v = SampleNamespace.SignedFlag.MinusOne
-        expected = 0xFFFFFFFF
+        expected = 0xFFFFFFFF if sys.version_info >= (3, 15, 0) else -1
         self.assertEqual(v.value, expected)
 
         p = SampleNamespace.passThroughSignedFlag(v)

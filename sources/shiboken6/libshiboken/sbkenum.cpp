@@ -469,6 +469,18 @@ template <typename IntT>
 static PyTypeObject *createPythonEnumHelper(const EnumContext &enumContext,
                                             const char *enumItemStrings[], const IntT enumValues[])
 {
+    if constexpr (std::is_signed_v<IntT>) {
+        // PYSIDE-3507: Cast signed flags to their unsigned equivalent (see GH-107538/PR132273).
+        // FIXME: Remove this code once the minimum version has been raised to 3.15 since the
+        // generator will then write unsigned arrays.
+        static const bool py315 = _PepRuntimeVersion() >= 0x030F00;
+        if (py315 && enumContext.isFlag) {
+            using UnsignedType = std::make_unsigned_t<IntT>;
+            return createPythonEnumHelper(enumContext, enumItemStrings,
+                                          reinterpret_cast<const UnsignedType *>(enumValues));
+        }
+    }
+
     AutoDecRef args(PyList_New(0));
     auto *pyEnumItems = args.object();
     for (size_t idx = 0; enumItemStrings[idx] != nullptr; ++idx) {

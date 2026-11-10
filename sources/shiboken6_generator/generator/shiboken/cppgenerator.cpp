@@ -5654,6 +5654,9 @@ static qsizetype maxLineLength(const QStringList &list)
 bool CppGenerator::writeEnumInitialization(TextStream &s, const char *enclosing,
                                            const AbstractMetaEnum &cppEnum)
 {
+    static const char py315Guard[] = "#if (defined(Py_LIMITED_API) && Py_LIMITED_API >= 0x030F0000)"
+                                     " || (!defined(Py_LIMITED_API) && PY_VERSION_HEX >= 0x030F0000)";
+
     const auto enclosingClass = cppEnum.targetLangEnclosingClass();
     EnumTypeEntryCPtr enumTypeEntry = cppEnum.typeEntry();
     const QString userType = enumTypeEntry->cppType();
@@ -5685,11 +5688,12 @@ bool CppGenerator::writeEnumInitialization(TextStream &s, const char *enclosing,
             + usedIntType + ">;\n"_L1;
 
     const auto pythonType = enumTypeEntry->pythonEnumType();
-    if (enumTypeEntry->forceUnsigned() || enumTypeEntry->flags()
-            || pythonType == TypeSystem::PythonEnumType::Flag
-            || pythonType == TypeSystem::PythonEnumType::IntFlag) {
-        // PYSIDE-3507/GH-107538/PR132273: Force flag values to be unsigned
+    if (enumTypeEntry->forceUnsigned()) {
         s << unsignedUsingStmt;
+    } else if (enumTypeEntry->flags() || pythonType == TypeSystem::PythonEnumType::Flag
+               || pythonType == TypeSystem::PythonEnumType::IntFlag) {
+        // PYSIDE-3507/GH-107538/PR132273: Force flag values to be unsigned
+        s << py315Guard << '\n' << unsignedUsingStmt << "#else\n" << usingStmt << "#endif\n";
     } else {
         s << usingStmt;
     }
