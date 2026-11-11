@@ -85,6 +85,17 @@ class EnumTest(unittest.TestCase):
         self.assertEqual(SampleNamespace.AnonymousClassEnum_Value0, 0)
         self.assertEqual(SampleNamespace.AnonymousClassEnum_Value1, 1)
 
+    def testNegativeFlagValue(self):
+        """PYSIDE-3507: As of Python 3.15, the handling of negative flag values was changed
+           (see GH-107538/PR132273). As a result, they need to be converted to their unsigned
+           counterparts to maintain the desired behavior in C++."""
+        v = SampleNamespace.SignedFlag.MinusOne
+        expected = 0xFFFFFFFF
+        self.assertEqual(v.value, expected)
+
+        p = SampleNamespace.passThroughSignedFlag(v)
+        self.assertEqual(p.value, expected)
+
     def testEnumClasses(self):
         # C++ 11: values of enum classes need to be fully qualified to match C++
         sum = Event.EventTypeClass.Value1 + Event.EventTypeClass.Value2

@@ -52,6 +52,11 @@ Option enumArgumentWithDefaultValue(Option opt)
     return opt;
 }
 
+SignedFlag passThroughSignedFlag(SignedFlag in)
+{
+    return in;
+}
+
 int getNumber(Option opt)
 {
     int retval;
