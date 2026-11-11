@@ -77,6 +77,7 @@ constexpr auto fileAttribute = "file"_L1;
 constexpr auto flagsAttribute = "flags"_L1;
 constexpr auto forceAbstractAttribute = "force-abstract"_L1;
 constexpr auto forceIntegerAttribute = "force-integer"_L1;
+constexpr auto forceUnsignedAttribute = "force-unsigned"_L1;
 constexpr auto formatAttribute = "format"_L1;
 constexpr auto generateUsingAttribute = "generate-using"_L1;
 constexpr auto generateFunctionsAttribute = "generate-functions"_L1;
@@ -1716,6 +1717,9 @@ EnumTypeEntryPtr
                       qPrintable(msgUnimplementedAttributeWarning(reader, name)));
         } else if (name == docFileAttribute) {
             entry->setDocFile(attributes->takeAt(i).value().toString());
+        } else if (name == forceUnsignedAttribute) {
+            if (convertBoolean(attributes->takeAt(i).value(), forceUnsignedAttribute, false))
+                entry->setForceUnsigned(true);
         } else if (name == forceIntegerAttribute) {
             qCWarning(lcShiboken, "%s",
                       qPrintable(msgUnimplementedAttributeWarning(reader, name)));

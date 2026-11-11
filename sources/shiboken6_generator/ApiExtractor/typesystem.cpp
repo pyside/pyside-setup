@@ -1275,6 +1275,7 @@ public:
     std::weak_ptr<const EnumTypeEntry> m_aliasTypeEntry;
     TypeSystem::PythonEnumType m_pythonEnumType = TypeSystem::PythonEnumType::Unspecified;
     EnumTypeEntry::AliasMode m_aliasMode = EnumTypeEntry::AliasMode::NoAlias;
+    bool m_forceUnsigned = false;
 };
 
 EnumTypeEntry::EnumTypeEntry(const QString &entryName,
@@ -1347,6 +1348,18 @@ void EnumTypeEntry::setCppType(const QString &t)
 {
     S_D(EnumTypeEntry);
     d->m_cppType = t;
+}
+
+void EnumTypeEntry::setForceUnsigned(bool f)
+{
+    S_D(EnumTypeEntry);
+    d->m_forceUnsigned = f;
+}
+
+bool EnumTypeEntry::forceUnsigned() const
+{
+    S_D(const EnumTypeEntry);
+    return d->m_forceUnsigned;
 }
 
 bool EnumTypeEntry::isEnumValueRejected(const QString &name) const

@@ -5679,7 +5679,20 @@ bool CppGenerator::writeEnumInitialization(TextStream &s, const char *enclosing,
         targetHexLen = usedBits / 4;
         usedIntType = AbstractMetaEnum::intTypeForSize(usedBits, cppEnum.isSigned());
     }
-    s << "using _ValueType = " << usedIntType << ";\n";
+
+    const QString usingStmt = "using _ValueType = "_L1 + usedIntType + ";\n"_L1;
+    const QString unsignedUsingStmt = "using _ValueType = std::make_unsigned_t<"_L1
+            + usedIntType + ">;\n"_L1;
+
+    const auto pythonType = enumTypeEntry->pythonEnumType();
+    if (enumTypeEntry->forceUnsigned() || enumTypeEntry->flags()
+            || pythonType == TypeSystem::PythonEnumType::Flag
+            || pythonType == TypeSystem::PythonEnumType::IntFlag) {
+        // PYSIDE-3507/GH-107538/PR132273: Force flag values to be unsigned
+        s << unsignedUsingStmt;
+    } else {
+        s << usingStmt;
+    }
 
     // Build maybe array of enum names.
     if (cppEnum.enumKind() != AnonymousEnum) {
@@ -6685,6 +6698,7 @@ bool CppGenerator::finishGeneration()
 #include <shiboken.h>
 #include <sbkbindingutils.h>
 #include <algorithm>
+#include <type_traits>
 #include <signature.h>
 )";
 

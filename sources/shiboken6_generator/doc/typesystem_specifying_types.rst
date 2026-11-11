@@ -311,7 +311,7 @@ and it is a child of the :ref:`typesystem_details` node. Use
             python-type = "IntEnum | IntFlag"
             lower-bound="..."
             upper-bound="..."
-            force-integer="yes | no"
+            force-unsigned="yes | no"
             extensible="yes | no"
             revision="..." />
     </typesystem>
@@ -319,14 +319,10 @@ and it is a child of the :ref:`typesystem_details` node. Use
 The **name** attribute is the fully qualified C++ name of the enum
 (e.g.,"Qt::FillRule"). If the *optional* **flags** attribute is set to *yes*
 (the default is *no*), the generator will expect an existing QFlags<T> for the
-given enum type. The **lower-bound** and **upper-bound** attributes are used
-to specify runtime bounds checking for the enum value. The value must be a
-compilable target language statement, such as "QGradient.Spread.PadSpread"
-(taking again Python as an example). If the **force-integer** attribute is
-set to *yes* (the default is *no*), the generated target language code will
-use the target language integers instead of enums. And finally, the
-**extensible** attribute specifies whether the given enum can be extended
-with user values (the default is *no*).
+given enum type.
+
+The *optional* **force-unsigned** attribute forces to the underlying
+enum type to be unsigned.
 
 The *optional*  **since** value is used to specify the API version of this type.
 

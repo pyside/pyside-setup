@@ -40,6 +40,9 @@ public:
     QString cppType() const;
     void setCppType(const QString &t);
 
+    void setForceUnsigned(bool f);
+    bool forceUnsigned() const;
+
     bool isEnumValueRejected(const QString &name) const;
     void addEnumValueRejection(const QString &name);
     QStringList enumValueRejections() const;
