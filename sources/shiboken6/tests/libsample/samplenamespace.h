@@ -9,6 +9,7 @@
 #include "point.h"
 #include "objecttype.h"
 
+#include <cstdint>
 #include <optional>
 #include <list>
 
@@ -71,6 +72,14 @@ LIBSAMPLE_API OutValue enumInEnumOut(InValue in);
 LIBSAMPLE_API Option enumArgumentWithDefaultValue(Option opt = UnixTime);
 
 LIBSAMPLE_API int getNumber(Option opt);
+
+enum class SignedFlag : int32_t {
+    Flag1 = 1,
+    Flag2 = 2,
+    MinusOne = -1
+};
+
+LIBSAMPLE_API SignedFlag passThroughSignedFlag(SignedFlag in);
 
 inline double powerOfTwo(double num) {
     return num * num;

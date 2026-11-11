@@ -435,6 +435,7 @@
         <enum-type name="Option"/>
         <enum-type name="InValue"/>
         <enum-type name="OutValue"/>
+        <enum-type name="SignedFlag" python-type="Flag"/>
         <enum-type identified-by-value="AnonymousClassEnum_Value1"/>
 
         <object-type name="DerivedFromNamespace">
