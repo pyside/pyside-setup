@@ -229,8 +229,18 @@ Tools
 The New Python Enums
 --------------------
 
-The Motivation to use new Enums
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+New integer flag handling in 6.13
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In CPython 3.15, the handling of negative integer flag values changed after
+`GH-107538`_. When passing something like ``-1`` (meaning all bits set),
+CPython changes the value to the inverse of all existing flags. This means,
+values like ``QDir::NoFilter``, which were previously passed as ``-1``, can no
+longer be represented and are converted to their unsigned equivalent
+``0xFFFFFFFF``.
+
+The Motivation to use new Enums (6.4)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For a long time, there were just the Shiboken enums, which were modelled as exact as possible
 after the existing enums in Qt. These enums are small classes which also inherit from
@@ -446,3 +456,4 @@ are always present.
 
 .. _`Blog post`: https://www.qt.io/blog/permission-apis-in-qt-6.5
 .. _`Camera Example`: https://doc.qt.io/qtforpython-6/examples/example_multimedia_camera.html#camera-example
+.. _`GH-107538`: https://github.com/python/cpython/pull/132273
