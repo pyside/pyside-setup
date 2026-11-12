@@ -1,0 +1,97 @@
+Qt for Python 6.12.1 is a bug-fix release.
+
+For more details, refer to the online documentation included in this
+distribution. The documentation is also available online:
+
+https://doc.qt.io/qtforpython/
+
+Some of the changes listed in this file include issue tracking numbers
+corresponding to tasks in the Qt Bug Tracker:
+
+https://bugreports.qt.io/
+
+Each of these identifiers can be entered in the bug tracker to obtain more
+information about a particular change.
+
+****************************************************************************
+*                                  PySide6                                 *
+****************************************************************************
+
+ - [PYSIDE-768]  QtAsyncio: Futures and tasks now follow asyncio more closely
+                 (callback contexts, per-task contexts, cancellation state),
+                 fixing failures with anyio-based libraries such as
+                 Pydantic AI.
+ - [PYSIDE-1112] Documentation: examples have been updated and their
+                 documentation has been improved.
+ - [PYSIDE-2352] iOS: QtQmlFeatures has been added.
+ - [PYSIDE-3366] SBOM support has been added. The build can now produce SBOM
+                 data when passing option --sbom.
+ - [PYSIDE-3398] iOS: The minimum Python version has been raised to 3.15.
+ - [PYSIDE-3471] PySide lazy imports have been fixed to handle
+                 Python 3.15 lazy imports.
+ - [PYSIDE-3472] type hints: PEP 526 annotations are now used for class
+                 attributes.
+ - [PYSIDE-3475] Missing libraries required for QtGraphs2D have been added.
+ - [PYSIDE-3478] Workarounds for lock-ups occurring with QMediaPlayer and
+                 signal/slot connections have been added.
+ - [PYSIDE-3479] Double deletion of widgets in certain layout setups
+                 has been fixed.
+ - [PYSIDE-3480] Documentation: Broken JIRA links in the changelog have
+                 been fixed.
+ - [PYSIDE-3488] Android Deployment: Qt libraries are now loaded in
+                 dependency order, fixing an issue with Qt Quick Controls.
+ - [PYSIDE-3489] A memory leak related to QTreeWidgetItem::takeChild(ren)
+                 has been fixed.
+ - [PYSIDE-3490] iOS: Third party packages are now supported.
+ - [PYSIDE-3500] A crash accessing header items of QStandardItemModel
+                 has been fixed.
+ - [PYSIDE-3501] Android: pyside6-android-deploy now falls back to
+                 existing library names.
+ - [PYSIDE-3505] metaobjectdump: A crash caused by lambdas in a property
+                 getter has been fixed.
+ - [PYSIDE-3511] A deadlock occurring when using QImageReader with
+                 multiple threads has been fixed.
+ - [PYSIDE-3512] Deadlocks occurring when using QAction as a default
+                 action of a QToolButton with multiple threads have been
+                 fixed.
+ - [PYSIDE-3513] A deadlock occurring when instantiating a QMediaPlayer
+                 with multiple threads has been fixed.
+ - [PYSIDE-3514] A deadlock occurring when instantiating QAudioOutput
+                 with multiple threads has been fixed.
+ - [PYSIDE-3515] A few incorrect parent-child relationships added by the
+                 generator heuristics for a number of QtWidgets accessors
+                 have been fixed.
+ - [PYSIDE-3516] CMake build: Some missing .pyi files are now installed.
+ - [PYSIDE-3517] A crash occurring in Python 3.15 when passing a temporary
+                 to QTimer.singleShot has been fixed.
+ - [PYSIDE-3518] Bindings for QTextDocument's resource provider have
+                 been added.
+ - [PYSIDE-3521] A crash using QTreeWidgetItemIterator has been fixed.
+
+****************************************************************************
+*                                  Shiboken6                               *
+****************************************************************************
+
+ - [PYSIDE-3221] Python 3.15 is now supported.
+ - [PYSIDE-3424] Crashes due to decreasing the refcount of Py_None to 0 and
+                 below when running against Python 3.10/3.11 have been
+                 addressed by raising the minimum build version for
+                 Limited API to Python 3.13.5. This version contains a
+                 fix for the issue (see GH 134989).
+ - [PYSIDE-3504] The required libxml dependency of shiboken6_generator has
+                 been raised to version 2.15.2, past the LibXml2 SONAME-Bump
+                 from libxml2.so.2 → libxml2.so.16. Documentation-generator
+                 features based on libxslt (XSLT-based modifications and
+                 doxygen support) are for now disabled in the wheels.
+                 Using them requires building shiboken6_generator.
+ - [PYSIDE-3473] libshiboken: A bug causing the delete-in-main-thread
+                 attribute to have no effect for Python-derived classes
+                 has been fixed.
+ - [PYSIDE-3507] Due to a change in CPython 3.15, negative flag values will
+                 now be converted to their unsigned equivalents
+                 (see GH-107538/PR132273). In 6.13, this will be the case
+                 for older Python versions, too.
+ - [PYSIDE-3515] Generator return value heuristics will no longer set
+                 a parent on a return value in case it already has one.
+ - [PYSIDE-3525] Generator return value heuristics now check for
+                 reference cycles.
