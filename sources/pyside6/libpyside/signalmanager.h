@@ -27,8 +27,12 @@ namespace PySide::SignalManager
     PYSIDE_API bool registerMetaMethod(QObject *source, const char *signature,
                                        QMetaMethod::MethodType type);
 
-    // used to discovery metaobject
-    PYSIDE_API const QMetaObject* retrieveMetaObject(PyObject *self);
+    // used to discover metaobject
+    PYSIDE_API const QMetaObject *retrieveMetaObject(const QObject *cppSelf);
+
+    // used to discover metaobject
+    PYSIDE_API const QMetaObject *retrieveMetaObject(PyObject *self);
+
 
 } // namespace PySide::SignalManager
 

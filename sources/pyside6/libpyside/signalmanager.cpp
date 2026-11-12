@@ -679,6 +679,12 @@ int registerMetaMethodGetIndexBA(QObject* source, const QByteArray &signature,
         ? methodIndex : addMetaMethod(source, signature, type);
 }
 
+const QMetaObject *retrieveMetaObject(const QObject *cppSelf)
+{
+    SbkObject *pySelf = Shiboken::BindingManager::instance().retrieveWrapper(cppSelf);
+    return pySelf != nullptr ? retrieveMetaObject(reinterpret_cast<PyObject *>(pySelf)) : nullptr;
+}
+
 const QMetaObject *retrieveMetaObject(PyObject *self)
 {
 #ifdef Py_GIL_DISABLED

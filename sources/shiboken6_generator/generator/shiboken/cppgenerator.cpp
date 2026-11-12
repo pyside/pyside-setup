@@ -1642,12 +1642,9 @@ void CppGenerator::writeMetaObjectMethod(TextStream &s,
     s << "const QMetaObject *" << wrapperClassName << "::metaObject() const\n{\n";
     s << indent << "if (QObject::d_ptr->metaObject != nullptr)\n"
         << indent << "return QObject::d_ptr->dynamicMetaObject();\n" << outdent
-        << "SbkObject *pySelf = Shiboken::BindingManager::instance().retrieveWrapper(this);\n"
-        << "if (pySelf == nullptr)\n"
-        << indent << "return " << qualifiedCppName << "::metaObject();\n" << outdent
-        << "return PySide::SignalManager::retrieveMetaObject("
-                "reinterpret_cast<PyObject *>(pySelf));\n"
-        << outdent << "}\n\n";
+        << "if (const QMetaObject *metaObject = PySide::SignalManager::retrieveMetaObject(this))\n"
+        << indent << "return metaObject;\n" << outdent
+        << "return " << qualifiedCppName << "::metaObject();\n" << outdent << "}\n\n";
 
     // qt_metacall function
     s << "int " << wrapperClassName
