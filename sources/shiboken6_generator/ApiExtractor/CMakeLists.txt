@@ -88,11 +88,11 @@ parser/enumvalue.cpp parser/enumvalue.h
 parser/typeinfo.cpp parser/typeinfo.h
 )
 
-find_package(LibXml2 2.15.2)
-find_package(LibXslt 1.1.19)
+find_package(WrapLibXml2 2.15.2)
+find_package(WrapLibXslt 1.1.19)
 
 set(HAS_LIBXSLT 0)
-if (LIBXSLT_FOUND AND LIBXML2_FOUND)
+if(WrapLibXslt_FOUND AND WrapLibXml2_FOUND)
     set(HAS_LIBXSLT 1)
 endif()
 
@@ -117,10 +117,8 @@ target_link_libraries(apiextractor PRIVATE libclang)
 if (HAS_LIBXSLT)
     target_compile_definitions(apiextractor PUBLIC HAVE_LIBXSLT)
     target_sources(apiextractor PRIVATE xmlutils_libxslt.cpp)
-    target_include_directories(apiextractor
-                               PRIVATE ${LIBXSLT_INCLUDE_DIR} ${LIBXML2_INCLUDE_DIR})
     target_link_libraries(apiextractor
-                          PRIVATE ${LIBXSLT_LIBRARIES} ${LIBXML2_LIBRARIES})
+                          PRIVATE WrapLibXslt::WrapLibXslt WrapLibXml2::WrapLibXml2)
 endif()
 
 if (NOT DISABLE_DOCSTRINGS)
