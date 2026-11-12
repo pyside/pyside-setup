@@ -1,8 +1,11 @@
 {
-    "files": ["main.py", "BrowserUtils/ApplicationRoot.qml",
+    "files": ["main.py", "BrowserUtils/ActionManager.qml", "BrowserUtils/ApplicationRoot.qml",
               "BrowserUtils/BrowserDialog.qml", "BrowserUtils/BrowserManager.qml",
+              "BrowserUtils/BrowserStackLayout.qml",
+              "BrowserUtils/BrowserTab.qml", "BrowserUtils/BrowserTabBar.qml",
               "BrowserUtils/BrowserWindow.qml",
               "BrowserUtils/DownloadView.qml", "BrowserUtils/FindBar.qml",
               "BrowserUtils/FullScreenNotification.qml", "BrowserUtils/WebAuthDialog.qml",
-              "BrowserUtils/qmldir", "resources.qrc"]
+              "BrowserUtils/WebToolBar.qml", "BrowserUtils/qmldir",
+              "resources.qrc"]
 }
