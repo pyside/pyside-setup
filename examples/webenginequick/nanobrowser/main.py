@@ -8,8 +8,8 @@ import sys
 from argparse import ArgumentParser, RawTextHelpFormatter
 from pathlib import Path
 
-from PySide6.QtCore import (QCoreApplication, QFileInfo, QObject,
-                            QUrl, Slot)
+from PySide6.QtCore import (QCoreApplication, QFileInfo, QLoggingCategory,
+                            QObject, QUrl, Slot)
 from PySide6.QtQml import QQmlApplicationEngine, QmlElement, QmlSingleton
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWebEngineQuick import QtWebEngineQuick
@@ -45,6 +45,8 @@ class Utils(QObject):
 if __name__ == '__main__':
     QCoreApplication.setApplicationName("Quick Nano Browser")
     QCoreApplication.setOrganizationName("QtProject")
+
+    QLoggingCategory.setFilterRules("qt.webenginecontext.debug=true")
 
     QtWebEngineQuick.initialize()
 

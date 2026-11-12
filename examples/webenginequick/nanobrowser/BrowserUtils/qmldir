@@ -1,7 +1,11 @@
 module BrowserUtils
+ActionManager 254.0 ActionManager.qml
 ApplicationRoot 254.0 ApplicationRoot.qml
 BrowserDialog 254.0 BrowserDialog.qml
 singleton BrowserManager 254.0 BrowserManager.qml
+BrowserStackLayout 254.0 BrowserStackLayout.qml
+BrowserTab 254.0 BrowserTab.qml
+BrowserTabBar 254.0 BrowserTabBar.qml
 BrowserWindow 254.0 BrowserWindow.qml
 DownloadView 254.0 DownloadView.qml
 FindBar 254.0 FindBar.qml
