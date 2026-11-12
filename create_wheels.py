@@ -9,6 +9,7 @@ import re
 import sys
 import importlib.util
 import json
+import logging
 from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -17,6 +18,7 @@ from shutil import copy, rmtree, copytree
 
 import build  # type: ignore
 import pyproject_hooks
+from setuptools.command.egg_info import FileList
 import build_scripts.wheel_files
 from build_scripts.wheel_files import (ModuleData,  # type: ignore
                                        set_pyside_package_path,
@@ -284,7 +286,7 @@ def python_language_versions(minor_versions: tuple[int, int]) -> str:
 
 
 def generate_pyproject_toml(artifacts: Path, setup: SetupData, package_path: Path,
-                            build_type: BuildType) -> str:
+                            build_type: BuildType, packages: list[str]) -> str:
     _name = setup.name
     _tag = get_platform_tag(package_path)
 
@@ -335,8 +337,66 @@ def generate_pyproject_toml(artifacts: Path, setup: SetupData, package_path: Pat
             .replace('"PYTHON_LANGUAGE_VERSIONS",', python_language_versions(minor_versions))
             .replace("REQUIRES_PYTHON", requires_python)
             .replace('PY_LIMITED_API', limited_api)
+            .replace('"PROJECT_PACKAGES"', json.dumps(packages))
         )
     return content
+
+
+def get_manifest_files(package_path: Path, manifest_content: str) -> list[Path]:
+    """Return the files that 'manifest_content' (a 'MANIFEST.in') selects in
+    'package_path', evaluated the same way setuptools does when building the
+    wheel."""
+    file_list = FileList()
+    cwd = os.getcwd()
+
+    # Avoid duplicate warnings during process_template_line calls when no file matches a template
+    # line. These will be shown later implicitly by the build itself.
+    logging.disable(logging.WARNING)
+
+    try:
+        os.chdir(package_path)
+        for line in manifest_content.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                file_list.process_template_line(line)
+    finally:
+        os.chdir(cwd)
+        logging.disable(logging.NOTSET)
+
+    return [package_path / f for f in file_list.files]
+
+
+def get_packages(package_path: Path, manifest_content: str) -> list[str]:
+    """Return a list of packages for a wheel, with the exact directories it should contain based
+    on processing the 'MANIFEST.in'.
+
+    The different wheels (Essentials, Addons) are built from the same staging directory,
+    so implicit package discovery would cause each wheel to contain the Python modules of all the
+    others. Specifying the exact list of packages to include avoids this problem.
+
+    Directories with data files are listed as well, so that setuptools
+    doesn't warn about them being absent from the 'packages' configuration.
+
+    Files in directories that can't be packages (e.g. 'Designer.app') are data
+    of the closest enclosing package."""
+    packages = set()
+    for file in get_manifest_files(package_path, manifest_content):
+        # e.g. ('PySide6', 'Qt', 'lib') for 'PySide6/Qt/lib/libfoo.dylib'.
+        parts = file.parent.relative_to(package_path).parts
+        # Bytecode caches are not packages.
+        if "__pycache__" in parts:
+            continue
+
+        # Use the parts up to the first non-identifier, e.g. 'PySide6/Designer.app' -> 'PySide6'.
+        package_parts = []
+        for part in parts:
+            if not part.isidentifier():
+                break
+            package_parts.append(part)
+        # Files at the top level of package_path belong to no package.
+        if package_parts:
+            packages.add(".".join(package_parts))
+    return sorted(packages)
 
 
 def generate_setup_py(artifacts: Path, setup: SetupData,
@@ -680,20 +740,13 @@ if __name__ == "__main__":
         with open(setup_py_path, "w", encoding="utf-8") as f:
             f.write(setup_py_content)
 
-        # 2. Generate 'pyproject.toml'
-        log.info("-- Generating pyproject.toml")
-        pyproject_toml_content = generate_pyproject_toml(artifacts_path, setup, package_path,
-                                                         build_type)
-        with open(pyproject_toml_path, "w", encoding="utf-8") as f:
-            f.write(pyproject_toml_content)
-
-        # 3. Create PySide_Essentials.json and PySide_Addons.json
+        # 2. Create PySide_Essentials.json and PySide_Addons.json
         # creates a json file mapping each Qt module to the possible plugin dependencies
         if data is not None:
             log.info(f"-- Creating {name}.json")
             create_module_plugin_json(name, data, package_path)
 
-        # 4. Create the 'MANIFEST.in'
+        # 3. Create the 'MANIFEST.in'
         # Special case for shiboken and shiboken_generator
         # so we copy the whole directory, only PySide and derivatives
         # will need to have specific information
@@ -705,13 +758,23 @@ if __name__ == "__main__":
         with open(package_path / "MANIFEST.in", "w", encoding="utf-8") as f:
             f.write(manifest_content)
 
-        # 5. copy configuration files to create the wheel
+        # 4. copy configuration files to create the wheel
         log.info("-- Copy configuration files to create the wheel")
         if name == "PySide6_Examples":
             copy_examples_for_wheel(package_path)
         _files: list[Path] = base_files + [Path(setup.readme)]
         for fname in _files:
             copy(fname, package_path)
+
+        # 5. Generate 'pyproject.toml'. The packages depend on 'MANIFEST.in' and the
+        # copied examples.
+        log.info("-- Generating pyproject.toml")
+        pyproject_toml_content = generate_pyproject_toml(artifacts_path, setup, package_path,
+                                                         build_type,
+                                                         get_packages(package_path,
+                                                                      manifest_content))
+        with open(pyproject_toml_path, "w", encoding="utf-8") as f:
+            f.write(pyproject_toml_content)
 
         # 6. call the build module to create the wheel
         log.info("-- Creating wheels")

@@ -51,15 +51,5 @@ Tracker = "https://qt-project.atlassian.net/browse/PYSIDE"
 py_limited_api = "PY_LIMITED_API"
 plat_name = "PROJECT_TAG"
 
-[tool.setuptools.packages.find]
-exclude = [
-    "shiboken6/__pycache__",
-    "shiboken6/include",
-    "shiboken6/lib",
-    "shiboken6_generator/Qt",
-    "shiboken6_generator/lib",
-    "shiboken6_generator/scripts",
-    "PySide6/Qt",
-    "PySide6/support",
-    "PySide6/support/__pycache__"
-]
+[tool.setuptools]
+packages = "PROJECT_PACKAGES"
