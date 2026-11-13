@@ -755,6 +755,8 @@ if __name__ == "__main__":
             manifest_content = get_simple_manifest(name)
         else:
             manifest_content = get_manifest(name, data, package_path, verbose)
+        # Bytecode from the build is interpreter specific, so exclude it. Also avoids warnings.
+        manifest_content += "\nglobal-exclude *.pyc\n"
         with open(package_path / "MANIFEST.in", "w", encoding="utf-8") as f:
             f.write(manifest_content)
 
