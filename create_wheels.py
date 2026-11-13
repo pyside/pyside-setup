@@ -7,6 +7,7 @@ import os
 import platform
 import re
 import sys
+import sysconfig
 from fnmatch import fnmatch
 import importlib.util
 import inspect
@@ -91,6 +92,14 @@ class BuildType(Enum):
 
 BUILDTYPE_POSTFIX_MAPPING = [(BuildType.LIMITED_API, "a"), (BuildType.FREE_THREADED, "t"),
                              (BuildType.DEBUG, "d"), (BuildType.RELEASE, "")]
+
+
+def default_build_type() -> BuildType:
+    """The type of a build dir whose name does not tell. A free-threaded Python
+    builds no limited API wheel (setuptools refuses py_limited_api there)."""
+    if sysconfig.get_config_var("Py_GIL_DISABLED"):
+        return BuildType.FREE_THREADED
+    return BuildType.LIMITED_API
 
 
 @dataclass
@@ -342,6 +351,8 @@ def generate_pyproject_toml(artifacts: Path, setup: SetupData, package_path: Pat
             .replace('PY_LIMITED_API', limited_api)
             .replace('"PROJECT_PACKAGES"', json.dumps(packages))
         )
+    if build_type == BuildType.FREE_THREADED:
+        content = content.replace(f'py_limited_api = "{limited_api}"\n', "")
     return content
 
 
@@ -650,7 +661,7 @@ def get_build_directory(options: Namespace) -> tuple[Path, BuildType]:
         raise ValueError(f'Invalid environment "{options.env}" passed')
     # Try explicit build-dir
     if options.build_dir and (Path(options.build_dir) / PACKAGE_FOR_WHEELS).is_dir():
-        return Path(options.build_dir), BuildType.LIMITED_API
+        return Path(options.build_dir), default_build_type()
     # Fallback to existing dirs (skip "config.tests")
     for d in build_dir.glob("*"):
         if (d / PACKAGE_FOR_WHEELS).is_dir():
@@ -659,7 +670,7 @@ def get_build_directory(options: Namespace) -> tuple[Path, BuildType]:
                 "the first valid directory it could find on its own. If this is not the one you "
                 "want, use the --env or --build-dir options to provide it explicitly."
             )
-            return d, BuildType.LIMITED_API
+            return d, default_build_type()
     raise FileNotFoundError(
         "Unable to determine build directory, no matching virtual environment found")
 

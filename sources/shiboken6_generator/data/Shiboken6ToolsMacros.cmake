@@ -104,8 +104,8 @@ function(shiboken_generator_create_binding)
     # Create binding library
     add_library(${arg_EXTENSION_TARGET} MODULE ${arg_GENERATED_SOURCES})
 
-    # set limited API
-    if(arg_FORCE_LIMITED_API OR FORCE_LIMITED_API)
+    # set limited API (a free-threaded Python has none)
+    if((arg_FORCE_LIMITED_API OR FORCE_LIMITED_API) AND NOT SHIBOKEN_PYTHON_FREE_THREADED)
         target_compile_definitions(${arg_EXTENSION_TARGET} PRIVATE -DPy_LIMITED_API=0x030a0000)
     endif()
 

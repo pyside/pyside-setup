@@ -215,6 +215,16 @@ if(WIN32)
 
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "${PYTHON_ADDITIONAL_LINK_FLAGS}")
 
+    # pyconfig.h on Windows leaves Py_GIL_DISABLED to the build of a free-threaded Python.
+    execute_process(
+      COMMAND ${python_interpreter} -c
+              "import sysconfig; print(sysconfig.get_config_var('Py_GIL_DISABLED') or 0)"
+      OUTPUT_VARIABLE PYTHON_GIL_DISABLED
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(PYTHON_GIL_DISABLED)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE Py_GIL_DISABLED=1)
+    endif()
+
     # Add custom target to hard link PySide6 shared libraries (just like in qmake example), so you
     # don't have to set PATH manually to point to the PySide6 package.
     set(shared_libraries ${SHIBOKEN_MODULE_SHARED_LIBRARIES} ${PYSIDE_SHARED_LIBRARIES})

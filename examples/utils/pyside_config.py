@@ -256,10 +256,15 @@ def python_link_data():
     flags['libdir'] = libdir
     if sys.platform == 'win32':
         suffix = '_d' if is_debug() else ''
-        flags['lib'] = f'python{version_no_dots}{suffix}'
+        if sysconfig.get_config_var('Py_GIL_DISABLED'):
+            flags['lib'] = f'python{version_no_dots}t{suffix}'
+        else:
+            flags['lib'] = f'python{version_no_dots}{suffix}'
 
     elif sys.platform == 'darwin':
         flags['lib'] = f'python{version}'
+        if sysconfig.get_config_var('Py_GIL_DISABLED'):
+            flags['lib'] += 't'
 
     # Linux and anything else
     else:
