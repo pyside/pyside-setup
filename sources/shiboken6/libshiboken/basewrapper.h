@@ -502,6 +502,13 @@ LIBSHIBOKEN_API bool isValid(PyObject *pyObj, bool throwPyError);
 LIBSHIBOKEN_API void setParent(PyObject *parent, PyObject *child);
 
 /*!
+    Like setParent(), but for use by the generator heuristics. It will not change
+    an existing parent.
+    \sa setParent()
+*/
+LIBSHIBOKEN_API void setParentReturnValueHeuristics(PyObject *parent, PyObject *child);
+
+/*!
     Removes \a child from its parent, if any. If \a giveOwnershipBack is
     true, Python takes the ownership of \a child. If \a keepReference is
     true, the reference to \a child is kept.
