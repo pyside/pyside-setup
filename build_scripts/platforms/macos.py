@@ -196,7 +196,8 @@ def prepare_standalone_package_macos(pyside_build, _vars, is_android=False, is_i
         # alongside their dylib as a CMake build artifact. Nuitka mishandles .a
         # files it encounters while walking dependencies, so keep them out of
         # the wheel just like the Qt/lib and Qt/plugins copies already do.
-        qml_ignore = ["*.la", "*.pc"] if is_ios else ["*.la", "*.a", "*.cmake", "*.pc", "*.prl"]
+        qml_ignore = (["*.la", "*.pc"] if is_ios
+                      else ["*.la", "*.a", "*.o", "*.cmake", "*.pc", "*.prl"])
 
         # <qt>/qml/* -> <setup>/{st_package_name}/Qt/qml
         copydir("{qt_qml_dir}", destination_qt_dir / "qml",
