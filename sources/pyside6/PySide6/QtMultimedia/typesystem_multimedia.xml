@@ -171,6 +171,7 @@
         <enum-type name="PlaybackState" since="6.1"/>
         <enum-type name="Error"/>
         <enum-type name="Loops" python-type="IntEnum" since="6.2.3"/>
+        <modify-function signature="QMediaPlayer(QObject*)" allow-thread="true"/>
         <modify-function signature="setSource(QUrl)" allow-thread="true"/>
         <modify-function signature="pause()" allow-thread="true"/>
         <modify-function signature="play()" allow-thread="true"/>
