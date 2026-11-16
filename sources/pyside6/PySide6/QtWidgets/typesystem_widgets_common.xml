@@ -802,6 +802,11 @@
         <parent index="this" action="add"/>
       </modify-argument>
     </modify-function>
+    <modify-function signature="mdiArea()const"> <!-- Suppress return value heuristics -->
+      <modify-argument index="return">
+        <define-ownership class="target" owner="default"/>
+      </modify-argument>
+    </modify-function>
   </object-type>
   <object-type name="QMenu">
     <inject-code class="native" position="beginning" file="../glue/qtwidgets.cpp" snippet="qmenu-glue"/>
@@ -2310,7 +2315,22 @@
       <modify-argument index="1" pyi-type="Optional[PySide6.QtWidgets.QWidget]"/>
     </modify-function>
 
-    <modify-function signature="window()const">
+    <modify-function signature="window()const"> <!-- Suppress return value heuristics -->
+      <modify-argument index="return">
+        <define-ownership class="target" owner="default"/>
+      </modify-argument>
+    </modify-function>
+    <modify-function signature="^childAt\(.*\)const$">
+      <modify-argument index="return">
+        <define-ownership class="target" owner="default"/>
+      </modify-argument>
+    </modify-function>
+    <modify-function signature="nextInFocusChain()const">
+      <modify-argument index="return">
+        <define-ownership class="target" owner="default"/>
+      </modify-argument>
+    </modify-function>
+    <modify-function signature="previousInFocusChain()const">
       <modify-argument index="return">
         <define-ownership class="target" owner="default"/>
       </modify-argument>
@@ -2483,6 +2503,11 @@
     </modify-function>
   </object-type>
   <object-type name="QLabel">
+    <modify-function signature="buddy()const"> <!-- Suppress return value heuristics -->
+      <modify-argument index="return">
+        <define-ownership class="target" owner="default"/>
+      </modify-argument>
+    </modify-function>
     <modify-function signature="setBuddy(QWidget*)">
       <modify-argument index="1">
         <parent index="this" action="add"/>
