@@ -1161,6 +1161,86 @@ if (!ok) {
 }
 // @snippet fix_margins_return
 
+// @snippet qtextdocument-resourceprovider-class
+// Wraps a Python callable taking a QUrl and returning a value convertible
+// to QVariant as QTextDocument::ResourceProvider. Qt may call it from any
+// thread. A Python error is stored (and re-raised by the Python call that
+// triggered the load, if any) or printed; the provider then returns an
+// invalid QVariant, so that Qt falls back to QTextDocument::loadResource().
+struct ResourceProviderFunctor : public Shiboken::PyObjectHolder
+{
+    using Shiboken::PyObjectHolder::PyObjectHolder;
+
+    QVariant operator()(const QUrl &url) const
+    {
+        Shiboken::GilState state;
+        Shiboken::AutoDecRef arg(%CONVERTTOPYTHON[QUrl](url));
+        Shiboken::AutoDecRef ret(PyObject_CallFunctionObjArgs(object(), arg.object(),
+                                                              nullptr));
+        if (ret.isNull()) {
+            Shiboken::Errors::storeErrorOrPrint();
+            return {};
+        }
+        QVariant result = %CONVERTTOCPP[QVariant](ret.object());
+        if (Shiboken::Errors::occurred()) {
+            Shiboken::Errors::storeErrorOrPrint();
+            return {};
+        }
+        return result;
+    }
+};
+
+// Returns the Python callable if the provider was set from Python, else
+// None (an empty provider, or one set by C++ code).
+static PyObject *resourceProviderToPython(const QTextDocument::ResourceProvider &provider)
+{
+    if (const auto *functor = provider.target<ResourceProviderFunctor>()) {
+        PyObject *callable = functor->object();
+        Py_INCREF(callable);
+        return callable;
+    }
+    Py_RETURN_NONE;
+}
+
+// Returns false and sets an error if the argument is not usable
+static bool resourceProviderFromPython(PyObject *callable,
+                                       QTextDocument::ResourceProvider *provider)
+{
+    if (callable == Py_None) {
+        *provider = {};
+        return true;
+    }
+    if (!PyCallable_Check(callable)) {
+        PyErr_SetString(PyExc_TypeError, "provider must be callable or None");
+        return false;
+    }
+    *provider = ResourceProviderFunctor(callable);
+    return true;
+}
+// @snippet qtextdocument-resourceprovider-class
+
+// @snippet qtextdocument-setresourceprovider
+QTextDocument::ResourceProvider provider;
+if (!resourceProviderFromPython(%PYARG_1, &provider))
+    return nullptr;
+%CPPSELF.setResourceProvider(provider);
+// @snippet qtextdocument-setresourceprovider
+
+// @snippet qtextdocument-resourceprovider
+%PYARG_0 = resourceProviderToPython(%CPPSELF.resourceProvider());
+// @snippet qtextdocument-resourceprovider
+
+// @snippet qtextdocument-setdefaultresourceprovider
+QTextDocument::ResourceProvider provider;
+if (!resourceProviderFromPython(%PYARG_1, &provider))
+    return nullptr;
+QTextDocument::setDefaultResourceProvider(provider);
+// @snippet qtextdocument-setdefaultresourceprovider
+
+// @snippet qtextdocument-defaultresourceprovider
+%PYARG_0 = resourceProviderToPython(QTextDocument::defaultResourceProvider());
+// @snippet qtextdocument-defaultresourceprovider
+
 /*********************************************************************
  * CONVERSIONS
  ********************************************************************/

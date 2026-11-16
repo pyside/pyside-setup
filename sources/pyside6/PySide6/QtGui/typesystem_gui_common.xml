@@ -1846,6 +1846,30 @@
       </modify-argument>
     </modify-function>
     <modify-function signature="print(QPagedPaintDevice*)const" allow-thread="yes" rename="print_"/>
+    <!-- ResourceProvider is std::function<QVariant(const QUrl &)>, which
+         is not bound. Offer Python callables (or None to clear) instead. -->
+    <inject-code class="native" position="beginning" file="../glue/qtgui.cpp"
+                 snippet="qtextdocument-resourceprovider-class"/>
+    <add-function signature="setResourceProvider(PyObject*@provider@)">
+      <inject-code class="target" position="beginning" file="../glue/qtgui.cpp"
+                   snippet="qtextdocument-setresourceprovider"/>
+      <modify-argument index="1" pyi-type="Union[collections.abc.Callable[[PySide6.QtCore.QUrl], typing.Any], None]"/>
+    </add-function>
+    <add-function signature="resourceProvider()const" return-type="PyObject*">
+      <inject-code class="target" position="beginning" file="../glue/qtgui.cpp"
+                   snippet="qtextdocument-resourceprovider"/>
+      <modify-argument index="return" pyi-type="Union[collections.abc.Callable[[PySide6.QtCore.QUrl], typing.Any], None]"/>
+    </add-function>
+    <add-function signature="setDefaultResourceProvider(PyObject*@provider@)" static="yes">
+      <inject-code class="target" position="beginning" file="../glue/qtgui.cpp"
+                   snippet="qtextdocument-setdefaultresourceprovider"/>
+      <modify-argument index="1" pyi-type="Union[collections.abc.Callable[[PySide6.QtCore.QUrl], typing.Any], None]"/>
+    </add-function>
+    <add-function signature="defaultResourceProvider()" return-type="PyObject*" static="yes">
+      <inject-code class="target" position="beginning" file="../glue/qtgui.cpp"
+                   snippet="qtextdocument-defaultresourceprovider"/>
+      <modify-argument index="return" pyi-type="Union[collections.abc.Callable[[PySide6.QtCore.QUrl], typing.Any], None]"/>
+    </add-function>
   </object-type>
   <object-type name="QTextDocumentWriter"/>
   <object-type name="QTextTable">
