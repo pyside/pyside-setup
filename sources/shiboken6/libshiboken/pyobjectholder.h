@@ -5,6 +5,7 @@
 #ifndef PYOBJECTHOLDER_H
 #define PYOBJECTHOLDER_H
 
+#include "gilstate.h"
 #include "sbkpython.h"
 
 #include <cassert>
@@ -20,7 +21,9 @@ namespace Shiboken
 
     PyObjectHolder holds a PyObject pointer, keeping a reference decrementing
     its reference counter when destroyed. It makes sure to hold the GIL when
-    releasing. It implements copy/move semantics and is mainly intended as a
+    releasing and when copying. If the interpreter has already been finalized,
+    which can happen for a holder stored in a global C++ object, the
+    reference is leaked instead. It implements copy/move semantics and is mainly intended as a
     base class for functors holding a callable which can be passed around and
     stored in containers or moved from freely.
     For one-shot functors, release() can be invoked after the call.
@@ -44,14 +47,14 @@ public:
 
     PyObjectHolder(const PyObjectHolder &o) noexcept : m_pyObj(o.m_pyObj)
     {
-        Py_XINCREF(m_pyObj);
+        incRef();
     }
 
     PyObjectHolder &operator=(const PyObjectHolder &o) noexcept
     {
         if (this != &o) {
             m_pyObj = o.m_pyObj;
-            Py_XINCREF(m_pyObj);
+            incRef();
         }
         return *this;
     }
@@ -65,7 +68,8 @@ public:
     }
 
     /*!
-        Decrements the reference count of the held Python object.
+        Decrements the reference count of the held Python object, unless
+        the interpreter is already gone.
     */
     ~PyObjectHolder() { release(); }
 
@@ -81,13 +85,26 @@ public:
     [[nodiscard]] PyObject *operator->() { return m_pyObj; }
 
 protected:
+    // Copies can be made by C++ code (for example, Qt copying a
+    // std::function) on a thread that does not hold the GIL.
+    void incRef() const
+    {
+        if (m_pyObj != nullptr && Py_IsInitialized()) {
+            GilState gilState;
+            Py_INCREF(m_pyObj);
+        }
+    }
+
     void release()
     {
         if (m_pyObj != nullptr) {
-            assert(Py_IsInitialized());
-            auto gstate = PyGILState_Ensure();
-            Py_DECREF(m_pyObj);
-            PyGILState_Release(gstate);
+            // A holder kept in a global C++ object is destroyed at process
+            // exit, after Py_Finalize(). There is no GIL to take then, so
+            // the reference is leaked.
+            if (Py_IsInitialized()) {
+                GilState gilState;
+                Py_DECREF(m_pyObj);
+            }
             m_pyObj = nullptr;
         }
     }
