@@ -46,6 +46,14 @@ class ThreadForContext(QThread):
         self.exec()
 
 
+class NonQObjectReveiver:
+    def __init__(self):
+        self._v = 10
+
+    def slotNotify(self):
+        print(self._v)  # Do something with a member to trigger an error
+
+
 class TestSingleShot(UsesQApplication):
     '''Test case for QTimer.singleShot'''
 
@@ -101,6 +109,12 @@ class TestSingleShot(UsesQApplication):
         self.assertTrue(self.called)
         self.assertTrue(thread.called)
         self.assertEqual(self.qthread, thread.qthread)
+
+    def testSingleShotWithContextTempReceiver(self):
+        """PYSIDE-3517: When a temporary is passed, the weakref tracking
+           should remove the connection. It should not trigger and no
+           errors/crashes should occur."""
+        QTimer.singleShot(1, qApp, NonQObjectReveiver().slotNotify)  # noqa: F821
 
 
 class TestSingleShotCallableObject(UsesQApplication):
