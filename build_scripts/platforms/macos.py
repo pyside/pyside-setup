@@ -79,6 +79,12 @@ def prepare_standalone_package_macos(pyside_build, _vars, is_android=False, is_i
                     return False
                 if constrain_modules and dir_name not in constrain_frameworks:
                     return False
+            elif constrain_modules and '.framework' not in str(dir_full_path):
+                return False
+
+            # Only linking against the static iOS Qt needs the CMake package and object files.
+            if not is_ios and (dir_name == 'cmake' or fnmatch.fnmatch(dir_name, 'objects-*')):
+                return False
 
             if dir_name == 'fonts':
                 return False
@@ -97,6 +103,9 @@ def prepare_standalone_package_macos(pyside_build, _vars, is_android=False, is_i
         no_copy_debug = True
 
         def framework_variant_filter(file_name, file_full_path):
+            # Skips libraries outside of the frameworks, e.g. FFmpeg.
+            if constrain_modules and '.framework' not in str(file_full_path):
+                return False
             if is_ios:
                 return not file_name.endswith(('_debug', '_debug.a', '_debug.prl', '-debug.cmake'))
             if pyside_build.qtinfo.build_type != 'debug_and_release':
