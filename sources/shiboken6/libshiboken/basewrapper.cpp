@@ -1508,6 +1508,13 @@ bool hasOwnership(SbkObject *pyObj)
     return pyObj->d->hasOwnership;
 }
 
+static SbkObject *getSbkParent(SbkObject *sbkObj)
+{
+    if (sbkObj != nullptr && sbkObj->d != nullptr && sbkObj->d->parentInfo != nullptr)
+        return sbkObj->d->parentInfo->parent;
+    return nullptr;
+}
+
 void getOwnership(SbkObject *sbkObj)
 {
     // skip if already have the ownership
@@ -1515,7 +1522,7 @@ void getOwnership(SbkObject *sbkObj)
         return;
 
     // skip if this object has parent
-    if (sbkObj->d->parentInfo && sbkObj->d->parentInfo->parent)
+    if (getSbkParent(sbkObj) != nullptr)
         return;
 
     // Get back the ownership
@@ -1974,7 +1981,7 @@ void destroy(SbkObject *self, void *cppData)
     // Remove the object from parent control
 
     // Verify if this object has parent
-    bool hasParent = (self->d->parentInfo && self->d->parentInfo->parent);
+    const bool hasParent = getSbkParent(self) != nullptr;
 
     if (self->d->parentInfo) {
         // Check for children information and make all invalid if they exists
@@ -2071,7 +2078,7 @@ void setParent(PyObject *parent, PyObject *child)
             parent_->d->parentInfo = new ParentInfo;
 
         // do not re-add a child
-        if (child_->d->parentInfo && (child_->d->parentInfo->parent == parent_)) {
+        if (getSbkParent(child_) == parent_) {
             if (Shiboken::pyVerbose()) {
                 std::cerr << "Warning: Attempt to re-add child "
                           << child << '/' << Py_TYPE(child)->tp_name << " to parent "
@@ -2109,6 +2116,16 @@ void setParent(PyObject *parent, PyObject *child)
 
     // Remove previous safe ref
     Py_DECREF(child);
+}
+
+void setParentReturnValueHeuristics(PyObject *parent, PyObject *child)
+{
+    // Do not set a parent if the child already has one. This reduces damage
+    // in case of inadvertent return value heuristics.
+    if (child != nullptr && child != Py_None && Object::checkType(child)
+        && getSbkParent(reinterpret_cast<SbkObject *>(child)) == nullptr) {
+        setParent(parent, child);
+    }
 }
 
 void deallocData(SbkObject *self, bool cleanup)
