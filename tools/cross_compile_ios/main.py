@@ -68,6 +68,9 @@ def cross_compile(args: argparse.Namespace) -> None:
         "--no-qt-tools",
     ]
 
+    if args.reuse_build:
+        cmd.append("--reuse-build")
+
     if dry_run:
         print(" ".join(cmd))
         return
@@ -103,6 +106,10 @@ def main():
     )
 
     parser.add_argument("--dry-run", action="store_true", help="show the commands to be run")
+
+    parser.add_argument("--reuse-build", action="store_true",
+                        help="Reuse the existing build directories and only rebuild "
+                             "changed sources")
 
     args = parser.parse_args()
 

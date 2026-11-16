@@ -126,6 +126,10 @@ if __name__ == "__main__":
     parser.add_argument("--download-only", action="store_true",
                         help="Only download Android NDK and SDK")
 
+    parser.add_argument("--reuse-build", action="store_true",
+                        help="Reuse the existing build directories and only rebuild "
+                             "changed sources")
+
     args = parser.parse_args()
 
     logging.basicConfig(level=args.loglevel)
@@ -148,6 +152,7 @@ if __name__ == "__main__":
     clean_cache = args.clean_cache
     coin = args.coin
     download_only = args.download_only
+    reuse_build = args.reuse_build
 
     # auto download Android NDK and SDK
     pyside6_deploy_cache = Path.home() / ".pyside6_android_deploy"
@@ -290,6 +295,10 @@ if __name__ == "__main__":
                             f"--dist-dir={str(android_dist_dir)}",
                             "--limited-api=yes",
                             "--no-qt-tools"]
+
+        if reuse_build:
+            qfp_ccompile_cmd.append("--reuse-build")
+
         run_command(qfp_ccompile_cmd, cwd=pyside_setup_dir, dry_run=dry_run, show_stdout=True)
 
     if download_only:
