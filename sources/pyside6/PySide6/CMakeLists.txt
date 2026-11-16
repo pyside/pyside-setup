@@ -103,10 +103,10 @@ endforeach()
 
 # install
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/__init__.py"
-        DESTINATION "${PYTHON_SITE_PACKAGES}/${BINDING_NAME}${pyside6_SUFFIX}")
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/_config.py"
-        DESTINATION "${PYTHON_SITE_PACKAGES}/${BINDING_NAME}${pyside6_SUFFIX}")
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/_git_pyside_version.py"
+              "${CMAKE_CURRENT_BINARY_DIR}/_config.py"
+              "${CMAKE_CURRENT_BINARY_DIR}/_git_pyside_version.py"
+              "${CMAKE_CURRENT_BINARY_DIR}/py.typed"
+              "${CMAKE_CURRENT_BINARY_DIR}/__feature__.pyi"
         DESTINATION "${PYTHON_SITE_PACKAGES}/${BINDING_NAME}${pyside6_SUFFIX}")
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/support"
         DESTINATION "${PYTHON_SITE_PACKAGES}/${BINDING_NAME}${pyside6_SUFFIX}")
