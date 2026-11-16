@@ -272,6 +272,8 @@ QMetaObject::Connection qobjectConnectCallback(QObject *source, const char *sign
     if (!connection)
         return {};
 
+    registerSlotConnection(source, signalIndex, callback, connection);
+
     static_cast<FriendlyQObject *>(source)->connectNotify(signalMethod);
     return connection;
 }
