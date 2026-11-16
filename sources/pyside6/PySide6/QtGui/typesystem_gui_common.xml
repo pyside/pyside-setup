@@ -1593,6 +1593,7 @@
          Update: perhaps it does, but no one is missing it. -->
     <modify-function signature="read(QImage*)" remove="all"/>
     <modify-function signature="read()" allow-thread="yes"/>
+    <modify-function signature="^\w+\(\)const" allow-thread="yes"/>
     <modify-function signature="setDevice(QIODevice*)">
       <modify-argument index="1">
         <parent index="this" action="add"/>
