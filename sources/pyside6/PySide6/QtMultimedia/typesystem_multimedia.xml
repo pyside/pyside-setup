@@ -97,7 +97,12 @@
     </value-type>
 
     <object-type name="QAudioInput"/>
-    <object-type name="QAudioOutput"/>
+    <object-type name="QAudioOutput">
+    <modify-function signature="connectNotify(QMetaMethod)"
+                     disable-override-lookup-in-destructor="true"/>
+    <modify-function signature="disconnectNotify(QMetaMethod)"
+                     disable-override-lookup-in-destructor="true"/>
+    </object-type>
 
     <object-type name="QAudioSource">
       <modify-function signature="start()" allow-thread="true">
