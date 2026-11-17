@@ -68,6 +68,8 @@ constexpr auto deleteInMainThreadAttribute = "delete-in-main-thread"_L1;
 constexpr auto deleteInOwnerThreadAttribute = "delete-in-owner-thread"_L1;
 constexpr auto deprecatedAttribute = "deprecated"_L1;
 constexpr auto blockingAttribute = "blocking"_L1;
+constexpr auto disableOverrideLookupInDestructorAttribute =
+    "disable-override-lookup-in-destructor"_L1;
 constexpr auto disableWrapperAttribute = "disable-wrapper"_L1;
 constexpr auto docFileAttribute = "doc-file"_L1;
 constexpr auto exceptionHandlingAttribute = "exception-handling"_L1;
@@ -2966,6 +2968,11 @@ bool TypeSystemParser::parseBasicModifyFunctionAttributes(QXmlStreamAttributes *
         } else if (name == blockingAttribute) {
             if (convertBoolean(attributes->takeAt(i).value(), blockingAttribute, false))
                 mod->setModifierFlag(FunctionModification::Blocking);
+        } else if (name == disableOverrideLookupInDestructorAttribute) {
+            if (convertBoolean(attributes->takeAt(i).value(),
+                               disableOverrideLookupInDestructorAttribute, false)) {
+                mod->setModifierFlag(FunctionModification::NoOverrideLookupInDestructor);
+            }
         }
     }
     return true;

@@ -83,7 +83,8 @@ private:
     static void writeCacheResetNative(TextStream &s, const GeneratorContext &classContext);
     void writeConstructorNative(TextStream &s, const GeneratorContext &classContext,
                                 const AbstractMetaFunctionCPtr &func) const;
-    static void writeDestructorNative(TextStream &s, const GeneratorContext &classContext);
+    static void writeDestructorNative(TextStream &s, const GeneratorContext &classContext,
+                                      const AbstractMetaFunctionCList &virtualFuncs);
 
     QString getVirtualFunctionReturnTypeName(const AbstractMetaFunctionCPtr &func) const;
     static std::pair<QString, QChar> virtualMethodNativeArg(const AbstractMetaFunctionCPtr &func,
@@ -98,7 +99,7 @@ private:
                                              const QList<int> &invalidateArgs);
     void writeVirtualMethodNative(TextStream &s,
                                   const AbstractMetaFunctionCPtr &func,
-                                  int cacheIndex) const;
+                                  qsizetype cacheIndex) const;
     void writeVirtualMethodPythonOverride(TextStream &s,
                                           const AbstractMetaFunctionCPtr &func,
                                           const CodeSnipList &snips,

@@ -182,7 +182,8 @@ public:
         Deprecated =            0x4000,
         Undeprecated =          0x8000,
         ReplaceExpression =    0x10000,
-        Blocking =             0x20000
+        Blocking =             0x20000,
+        NoOverrideLookupInDestructor = 0x40000,
     };
 
     Q_DECLARE_FLAGS(Modifiers, ModifierFlag);
