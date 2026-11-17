@@ -7,7 +7,9 @@ import os
 import platform
 import re
 import sys
+from fnmatch import fnmatch
 import importlib.util
+import inspect
 import json
 import logging
 from argparse import ArgumentParser, Namespace
@@ -631,6 +633,127 @@ def get_build_directory(options: Namespace) -> tuple[Path, BuildType]:
         "Unable to determine build directory, no matching virtual environment found")
 
 
+def module_names_from_wheel_function(func) -> set[str]:
+    """Return the Qt module short names referenced by a wheel_files_pyside_* function.
+
+    The names are extracted from the function's source (the 'module_Qt<Name>()' calls) rather
+    than by calling it, because calling it requires the package paths to be set up first.
+    """
+    source = inspect.getsource(func)
+    return set(re.findall(r"module_Qt([A-Za-z0-9]+)\(\)", source))
+
+
+def module_names_from_cmake_list(cmake_text: str, list_name: str) -> set[str]:
+    """Return the module names defined in a `set(<list_name> ...)` block of a CMake file."""
+    match = re.search(rf"set\(\s*{list_name}\b(.*?)\)", cmake_text,
+                      re.DOTALL)
+    if not match:
+        return set()
+    return set(match.group(1).split())
+
+
+def check_wheel_module_lists_consistency() -> list[str]:
+    """Return the differences between the per-wheel module lists of Python and CMake.
+
+    build_scripts/wheel_files.py defines the wheel contents, while the
+    PYSIDE_<WHEEL>_WHEEL_MODULES lists in `mapping_cmake` control how the
+    built modules are split across the per-wheel SBOM documents. The two must
+    stay in sync, otherwise the SBOM documents stop matching the wheels.
+    """
+    mapping_cmake = Path("sources/pyside6/cmake/PySideSbomWheelMapping.cmake")
+    if not mapping_cmake.is_file():
+        return [f"Could not find '{mapping_cmake}' to check the per-wheel module lists."]
+
+    cmake_text = mapping_cmake.read_text(encoding="utf-8")
+    problems = []
+
+    for wheel_name, py_func, cmake_list in (
+        ("essentials", wheel_files_pyside_essentials, "PYSIDE_ESSENTIALS_WHEEL_MODULES"),
+        ("addons", wheel_files_pyside_addons, "PYSIDE_ADDONS_WHEEL_MODULES"),
+        ("webengine", wheel_files_pyside_webengine, "PYSIDE_WEBENGINE_WHEEL_MODULES"),
+        ("pdf", wheel_files_pyside_pdf, "PYSIDE_PDF_WHEEL_MODULES"),
+    ):
+        python_modules = module_names_from_wheel_function(py_func)
+        cmake_modules = module_names_from_cmake_list(cmake_text, cmake_list)
+
+        only_in_python = python_modules - cmake_modules
+        only_in_cmake = cmake_modules - python_modules
+
+        if only_in_python or only_in_cmake:
+            problem = (f"The PySide6 {wheel_name} module list is out of sync between Python "
+                       f"(wheel_files_pyside_{wheel_name} in build_scripts/wheel_files.py) and "
+                       f"CMake ({cmake_list} in {mapping_cmake}):")
+            if only_in_python:
+                problem += f"\n  only in Python: {sorted(only_in_python)}"
+            if only_in_cmake:
+                problem += f"\n  only in CMake:  {sorted(only_in_cmake)}"
+            problems.append(problem)
+
+    return problems
+
+
+def check_qt_tool_wheel_modules_consistency() -> list[str]:
+    """Return the Qt tools that are assigned to a different module in CMake than in Python.
+
+    The module_Qt<module>() functions in build_scripts/wheel_files.py decide which wheel ships a
+    Qt tool, while PYSIDE_QT_TOOLS_WHEEL_MODULES decides which per-wheel pyside-tools SBOM
+    document lists it. Needs set_pyside_package_path() to have been called.
+    """
+    mapping_cmake = Path("sources/pyside6/cmake/PySideSbomWheelMapping.cmake")
+    # Already reported by check_wheel_module_lists_consistency().
+    if not mapping_cmake.is_file():
+        return []
+
+    cmake_text = mapping_cmake.read_text(encoding="utf-8")
+    problems = []
+    entries = module_names_from_cmake_list(cmake_text, "PYSIDE_QT_TOOLS_WHEEL_MODULES")
+    module_patterns = {}
+    for entry in sorted(entries):
+        tool, _, module = entry.partition(":")
+        if module not in module_patterns:
+            module_func = getattr(build_scripts.wheel_files, f"module_Qt{module}", None)
+            module_patterns[module] = None
+            if module_func:
+                data = module_func()
+                module_patterns[module] = [Path(p).name
+                                           for p in data.extra_files + data.extra_dirs]
+        patterns = module_patterns[module]
+        assignment = (f"The Qt tool '{tool}' is assigned to Qt{module} in "
+                      f"PYSIDE_QT_TOOLS_WHEEL_MODULES in {mapping_cmake}")
+        if patterns is None:
+            problems.append(f"{assignment}, but build_scripts/wheel_files.py has no "
+                            f"module_Qt{module}() function.")
+            continue
+        names = (tool, f"{tool}.exe", f"{tool.capitalize()}.app")
+        if not any(fnmatch(name, pattern) for name in names for pattern in patterns):
+            problems.append(f"{assignment}, but module_Qt{module}() in "
+                            "build_scripts/wheel_files.py doesn't ship it.")
+
+    return problems
+
+
+def check_sbom_wheel_mapping(package_path: Path, warn_only: bool):
+    """Fail if the CMake SBOM wheel mapping doesn't match build_scripts/wheel_files.py.
+
+    All problems are reported before exiting. With 'warn_only', they are reported as warnings
+    and the wheel creation continues.
+    """
+    # The module_Qt<module>() functions used by the Qt tools check read the module JSON files.
+    set_pyside_package_path(package_path / "PySide6")
+    problems = check_wheel_module_lists_consistency() + check_qt_tool_wheel_modules_consistency()
+    if not problems:
+        return
+
+    report = log.warning if warn_only else log.error
+    for problem in problems:
+        report(problem)
+
+    if not warn_only:
+        log.error("The SBOM wheel mapping is inconsistent. Fix the lists above, or pass "
+                  "--sbom-mapping-warn-only to continue anyway.")
+        sys.exit(1)
+
+
 def check_modules_consistency():
     available_functions = dir(build_scripts.wheel_files)
     functions = [i.replace("module_", "") for i in available_functions if i.startswith("module_")]
@@ -676,6 +799,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--no-examples", "-e", action="store_true",
                         help="Do not build examples wheel")
+    parser.add_argument("--sbom-mapping-warn-only", action="store_true",
+                        help="Report mismatches between PySideSbomWheelMapping.cmake and "
+                             "build_scripts/wheel_files.py as warnings instead of failing")
     options = parser.parse_args()
 
     # Sanity check between the available modules,
@@ -723,6 +849,8 @@ if __name__ == "__main__":
     }
     if not options.no_examples:
         wheels["PySide6_Examples"] = wheel_pyside6_examples
+
+    check_sbom_wheel_mapping(package_path, options.sbom_mapping_warn_only)
 
     for name, wheel_info in wheels.items():
 
