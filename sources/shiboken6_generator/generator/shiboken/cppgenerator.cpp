@@ -53,6 +53,7 @@
 #include <QtCore/qtextstream.h>
 
 #include <algorithm>
+#include <iterator>
 #include <cstring>
 #include <memory>
 #include <set>
@@ -757,18 +758,25 @@ void CppGenerator::generateClass(TextStream &s,
             writeCacheResetNative(s, classContext);
         for (const auto &func : wrapperConstructors)
             writeConstructorNative(s, classContext, func);
-        int maxOverrides = 0;
-        for (const auto &func : metaClass->functions()) {
+
+        // Collect virtual functions
+        const auto virtualPred = [](const  AbstractMetaFunctionCPtr &func) {
             const auto generation = functionGeneration(func);
-            if (generation.testFlag(FunctionGenerationFlag::VirtualMethod))
-                writeVirtualMethodNative(s, func, maxOverrides++);
-        }
+            return generation.testFlag(FunctionGenerationFlag::VirtualMethod);
+        };
+
+        AbstractMetaFunctionCList virtualFuncs;
+        std::copy_if(metaClass->functions().cbegin(), metaClass->functions().cend(),
+                     std::back_inserter(virtualFuncs), virtualPred);
+
+        for (qsizetype i = 0, size = virtualFuncs.size(); i < size; ++i)
+            writeVirtualMethodNative(s, virtualFuncs.at(i), i);
 
         if (shouldGenerateMetaObjectFunctions(metaClass))
             writeMetaObjectMethod(s, classContext);
         // PYSIDE-504: See comment at HeaderGenerator::protectedHackDefine.
         if (typeEntry->destructorType() != TypeSystem::DestructorType::NoDestructor)
-            writeDestructorNative(s, classContext);
+            writeDestructorNative(s, classContext, virtualFuncs);
     }
 
     for (const auto &f : metaClass->userAddedPythonOverrides())
@@ -1036,13 +1044,29 @@ void CppGenerator::writeConstructorNative(TextStream &s, const GeneratorContext 
     s << outdent << "}\n\n";
 }
 
+static bool noOverrideLookupInDestructor(const FunctionModification &fm)
+{
+    return fm.modifiers().testFlag(FunctionModification::NoOverrideLookupInDestructor);
+}
+
 void CppGenerator::writeDestructorNative(TextStream &s,
-                                         const GeneratorContext &classContext)
+                                         const GeneratorContext &classContext,
+                                         const AbstractMetaFunctionCList &virtualFuncs)
 {
     s << classContext.wrapperName() << "::~"
         << classContext.wrapperName() << "()\n{\n" << indent;
     if (wrapperDiagnostics())
         s << R"(std::cerr << __FUNCTION__ << ' ' << this << '\n';)" << '\n';
+
+    for (qsizetype i = 0, size = virtualFuncs.size(); i < size; ++i) {
+        const auto &mods = virtualFuncs.at(i)->modifications();
+        if (std::any_of(mods.cbegin(), mods.cend(), noOverrideLookupInDestructor)) {
+             s << "if (m_PyMethodCache[" << i << "] == nullptr) {\n" << indent
+                 << "Py_INCREF(Py_None);\nm_PyMethodCache[" << i << "] = Py_None;\n"
+                 << outdent << "}\n";
+        }
+    }
+
     // kill pyobject
     s << "auto *wrapper = " << retrieveWrapper(classContext.metaClass())
       << ";\nShiboken::Object::destroy(wrapper, this);\n" << outdent << "}\n";
@@ -1319,7 +1343,7 @@ static void writeFuncNameVar(TextStream &s, const AbstractMetaFunctionCPtr &func
 
 void CppGenerator::writeVirtualMethodNative(TextStream &s,
                                             const AbstractMetaFunctionCPtr &func,
-                                            int cacheIndex) const
+                                            qsizetype cacheIndex) const
 {
     TypeEntryCPtr retType = func->type().typeEntry();
     const QString funcName = func->isOperatorOverload()

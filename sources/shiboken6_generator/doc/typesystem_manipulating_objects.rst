@@ -171,7 +171,8 @@ or return values.
                           overload-number="number"
                           rename="..."
                           snake-case="yes | no | both"
-                          deprecated = "true | false" />
+                          deprecated = "true | false"
+                          disable-override-lookup-in-destructor = "true | false"/>
      </object-type>
 
 The ``signature`` attribute is a normalized C++ signature, excluding return
@@ -268,6 +269,19 @@ specified on the class entry or **typesystem** element.
 
 The *optional* **deprecated** attribute allows for overriding deprecation
 as detected by the C++ attribute. It works in both ways.
+
+The *optional* **disable-override-lookup-in-destructor** disables the lookup
+of Python functions overriding a virtual C++ function when the wrapper
+destructor runs. This avoids deadlocks between the *GIL* (taken by the lookup)
+and other mutexes in the C++ library.
+
+Specifically, this happens when *QObject* destructors disconnect
+signal slot connections internally in Qt and thereby invoke virtuals like
+*QObject::connectNotify()*  and *QObject::disconnectNotify()*, which lock
+internal mutexes in *Qt*.
+
+.. note:: Virtual functions should not normally be called from destructors in C++;
+          this constitutes an issue in the library.
 
 .. _add-function:
 
