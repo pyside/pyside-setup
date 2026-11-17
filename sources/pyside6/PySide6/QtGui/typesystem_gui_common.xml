@@ -186,6 +186,9 @@
     <add-function signature="setShortcut(Qt::Key)">
         <inject-code file="../glue/qtgui.cpp" snippet="set-qtkey-shortcut"/>
     </add-function>
+    <modify-function signature="setIcon(QIcon)" allow-thread="yes"/>
+    <modify-function signature="^setShortcuts?\(.*\)$" allow-thread="yes"/>
+    <modify-function signature="^set\w+\(QString\)$" allow-thread="yes"/>
   </object-type>
   <object-type name="QActionGroup">
     <enum-type name="ExclusionPolicy"/>
