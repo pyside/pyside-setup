@@ -825,6 +825,15 @@ class PysideBuild(_build, CommandMixin, BuildInfoCollectorMixin):
         if self.qt_host_path:
             cmake_cmd.append(f"-DQFP_QT_HOST_PATH={self.qt_host_path}")
 
+        # Use the qdoc of the selected Qt (not the first one in PATH).
+        if self.qt_host_path:
+            qdoc_dirs = [Path(self.qt_host_path) / "bin", Path(self.qt_host_path) / "libexec"]
+        else:
+            qdoc_dirs = [Path(self.qtinfo.bins_dir), Path(self.qtinfo.lib_execs_dir)]
+        qdoc_path = next((d / "qdoc" for d in qdoc_dirs if (d / "qdoc").is_file()), None)
+        if qdoc_path:
+            cmake_cmd.append(f"-DQDOC_EXECUTABLE={qdoc_path}")
+
         if self.is_cross_compile and (not OPTION["SHIBOKEN_HOST_PATH"]
                                       or not Path(OPTION["SHIBOKEN_HOST_PATH"]).exists()):
             raise SetupError("Please specify the location of host shiboken tools via "

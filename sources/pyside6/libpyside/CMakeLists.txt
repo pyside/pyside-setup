@@ -172,10 +172,7 @@ set(libpyside_qdocconf "${CMAKE_CURRENT_BINARY_DIR}/libpyside.qdocconf")
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/libpyside.qdocconf.in" "${libpyside_qdocconf}" @ONLY)
 
-add_custom_target(libpyside_qdoc
-                  COMMAND qdoc "${libpyside_qdocconf}"
-                  COMMENT "Generating libpyside documentation"
-                  VERBATIM)
+shiboken_add_qdoc_target(libpyside_qdoc "${libpyside_qdocconf}" libpyside)
 
 # for creating cmake-config files
 include(CMakePackageConfigHelpers)

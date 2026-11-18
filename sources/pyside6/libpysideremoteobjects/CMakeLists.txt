@@ -71,10 +71,8 @@ set(libpysideremoteobjects_qdocconf "${CMAKE_CURRENT_BINARY_DIR}/libpysideremote
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/libpysideremoteobjects.qdocconf.in"
                "${libpysideremoteobjects_qdocconf}" @ONLY)
 
-add_custom_target(libpysideremoteobjects_qdoc
-                  COMMAND qdoc "${libpysideremoteobjects_qdocconf}"
-                  COMMENT "Generating libpysideremoteobjects documentation"
-                  VERBATIM)
+shiboken_add_qdoc_target(libpysideremoteobjects_qdoc "${libpysideremoteobjects_qdocconf}"
+                         libpysideremoteobjects)
 
 #
 # install stuff

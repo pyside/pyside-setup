@@ -864,3 +864,22 @@ function(shiboken_get_debug_level out_var)
     endif()
     set(${out_var} "${debug_level}" PARENT_SCOPE)
 endfunction()
+
+# Adds a target that runs qdoc on a .qdocconf file, using the qdoc given by QDOC_EXECUTABLE
+# (set by setup.py from the Qt specified by --qtpaths). Logs the qdoc version, or a warning if
+# qdoc is not available and the documentation is therefore not built.
+function(shiboken_add_qdoc_target target qdocconf title)
+    if(NOT QDOC_EXECUTABLE)
+        message(WARNING "The ${title} documentation was not built: QDOC_EXECUTABLE is not set.")
+        return()
+    endif()
+
+    execute_process(COMMAND "${QDOC_EXECUTABLE}" --version
+                    OUTPUT_VARIABLE qdoc_version OUTPUT_STRIP_TRAILING_WHITESPACE)
+    message(STATUS "${title} documentation tool: ${qdoc_version}")
+
+    add_custom_target(${target}
+                      COMMAND "${QDOC_EXECUTABLE}" "${qdocconf}"
+                      COMMENT "Generating ${title} documentation"
+                      VERBATIM)
+endfunction()
