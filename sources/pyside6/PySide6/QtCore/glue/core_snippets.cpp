@@ -98,12 +98,7 @@ void globalPostRoutineCallback()
 
 void addPostRoutine(PyObject *callback)
 {
-    if (PyCallable_Check(callback)) {
-        globalPostRoutineFunctions << callback;
-        Py_INCREF(callback);
-    } else {
-        PyErr_SetString(PyExc_TypeError, "qAddPostRoutine: The argument must be a callable object.");
-    }
+    globalPostRoutineFunctions.append(Py_NewRef(callback));
 }
 #endif // Py_GIL_DISABLED
 } // namespace PySide

@@ -720,7 +720,7 @@
     <inject-code class="target" position="beginning" file="../glue/qtcore.cpp" snippet="qt-qabs"/>
   </add-function>
 
-  <add-function signature="qAddPostRoutine(PyObject*@callable@)">
+  <add-function signature="qAddPostRoutine(PyCallable*@callable@)">
     <inject-code class="target" position="beginning" file="../glue/qtcore.cpp" snippet="qt-addpostroutine"/>
   </add-function>
   <inject-code class="target" position="end" file="../glue/qtcore.cpp" snippet="qt-qaddpostroutine"/>
