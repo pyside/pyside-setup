@@ -20,7 +20,7 @@ target_sources(PySidePlugin PRIVATE
 
 target_compile_definitions(PySidePlugin PRIVATE -DQT_NO_KEYWORDS=1)
 
-if(FORCE_LIMITED_API)
+if(FORCE_LIMITED_API OR SHIBOKEN_PYTHON_LIMITED_API)
     target_compile_definitions(PySidePlugin PRIVATE "-DPy_LIMITED_API=0x030a0000")
 endif()
 
