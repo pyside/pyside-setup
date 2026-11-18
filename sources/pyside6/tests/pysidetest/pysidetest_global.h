@@ -9,6 +9,7 @@
 #include "containertest.h"
 #include "testobject.h"
 #include "testview.h"
+#include "testwidget.h"
 #include "flagstest.h"
 #include "hiddenobject.h"
 #include "sharedpointertestbench.h"

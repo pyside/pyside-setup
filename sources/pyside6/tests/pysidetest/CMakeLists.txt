@@ -29,6 +29,7 @@ pysidetest_macros.h
 sharedpointertestbench.cpp sharedpointertestbench.h
 testobject.cpp testobject.h
 testview.cpp testview.h
+testwidget.cpp testwidget.h
 testqvariantenum.cpp testqvariantenum.h
 )
 
@@ -46,6 +47,7 @@ ${CMAKE_CURRENT_BINARY_DIR}/testbinding/qsharedpointer_qobject_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/testbinding/qsharedpointer_int_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/testbinding/sharedpointertestbench_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/testbinding/testview_wrapper.cpp
+${CMAKE_CURRENT_BINARY_DIR}/testbinding/testwidget_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/testbinding/testbinding_module_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/testbinding/testqvariantenum_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/testbinding/qvariantholder_wrapper.cpp
@@ -166,6 +168,7 @@ PYSIDE_TEST(delegatecreateseditor_test.py)
 PYSIDE_TEST(all_modules_load_test.py)
 PYSIDE_TEST(bug_1016.py)
 PYSIDE_TEST(enum_test.py)
+PYSIDE_TEST(heuristics_test.py)
 PYSIDE_TEST(homonymoussignalandmethod_test.py)
 PYSIDE_TEST(iterable_test.py)
 PYSIDE_TEST(list_signal_test.py)
