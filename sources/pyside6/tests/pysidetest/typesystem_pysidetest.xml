@@ -22,6 +22,7 @@
         </conversion-rule>
     </primitive-type>
     <object-type name="TestObject" />
+    <object-type name="TestWidget" />
 
     <primitive-type name="PySideInt"/>
     <primitive-type name="PySideCPP2::PySideLong"/>

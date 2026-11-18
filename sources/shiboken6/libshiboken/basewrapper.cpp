@@ -2118,14 +2118,34 @@ void setParent(PyObject *parent, PyObject *child)
     Py_DECREF(child);
 }
 
+static bool isAncestorOf(const SbkObject *ancestor, SbkObject *obj)
+{
+    for (; obj != nullptr; obj = getSbkParent(obj)) {
+        if (obj == ancestor)
+            return true;
+    }
+    return false;
+}
+
+static inline bool checkReturnValueHeuristics(PyObject *parent, PyObject *child)
+{
+    if (child == nullptr || child == Py_None || !Object::checkType(child)
+        || parent == nullptr || parent == Py_None || !Object::checkType(parent)) {
+        return false;
+    }
+    auto *sbkChild = reinterpret_cast<SbkObject *>(child);
+    if (getSbkParent(sbkChild) != nullptr) // PYSIDE-3515, do not change an existing parent
+        return false;
+    // PYSIDE-3525, do not create cycles
+    if (isAncestorOf(sbkChild, reinterpret_cast<SbkObject *>(parent)))
+        return false;
+    return true;
+}
+
 void setParentReturnValueHeuristics(PyObject *parent, PyObject *child)
 {
-    // Do not set a parent if the child already has one. This reduces damage
-    // in case of inadvertent return value heuristics.
-    if (child != nullptr && child != Py_None && Object::checkType(child)
-        && getSbkParent(reinterpret_cast<SbkObject *>(child)) == nullptr) {
+    if (checkReturnValueHeuristics(parent, child))
         setParent(parent, child);
-    }
 }
 
 void deallocData(SbkObject *self, bool cleanup)
