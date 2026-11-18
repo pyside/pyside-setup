@@ -84,7 +84,8 @@
       <modify-argument index="1" pyi-type="str"/>
     </add-function>
 
-    <add-function signature="qmlRegisterSingletonInstance(PyTypeObject@type_obj@,const char*@uri@,int@version_major@,int@version_minor@,const char*@qml_name@,PyObject*@callback@)" return-type="int">
+    <add-function signature="qmlRegisterSingletonInstance(PyTypeObject@type_obj@,const char*@uri@,int@version_major@,int@version_minor@,const char*@qml_name@,PyObject*@instance@)"
+                  return-type="int">
       <inject-code class="target" file="../glue/qtqml.cpp" snippet="qmlregistersingletoninstance"/>
       <inject-documentation format="target" mode="append" file="../doc/qtqml.rst"
                             snippet="qmlregistersingletoninstance"/>
