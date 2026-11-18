@@ -16,6 +16,7 @@ Add bindings
 - Add the module to the ``coin/dependencies.yaml`` file.
 - Add it to ``sources/pyside6/cmake/PySideHelpers.cmake``.
 - Add it to ``build_scripts/wheel_files.py`` (plugins, translations).
+- Add it to ``sources/pyside6/cmake/PySideSbomWheelMapping.cmake`` for SBOM generation
 - Copy an existing module to ``sources/pyside6/PySide6/<name>``.
 - Adapt the ``typesystem.xml`` and ``CMakeList.txt`` (using for example
   *Qt Creator*'s case-preserving replace function).
