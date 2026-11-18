@@ -45,14 +45,68 @@ are provided (see :ref:`predefined_templates`).
 CPython Types
 ^^^^^^^^^^^^^
 
-Python types like `str` match types like `PyUnicode` in the *Concrete Objects
-Layer* of CPython. They have check functions like `PyUnicode_Check()`, which
-Shiboken generates into the code checking the function arguments.
+Python types like `str` match CPython types like `PyUnicode` in the *Concrete
+Objects Layer* of CPython. They have check functions like `PyUnicode_Check()`,
+which Shiboken generates into the code checking the function arguments.
 
-These types occur as parameters when :ref:`adding functions <add-function>`
-or :ref:`modifying types <replace-type>`, as type on `add-conversion`
-within a :ref:`conversion-rule` or as target language API types on
-:ref:`primitive-type`.
+The CPython types are built into Shiboken as :ref:`custom types <custom-type>`
+along with their check functions.
 
-They are built into Shiboken as :ref:`custom types <custom-type>` along
-with their check functions.
+To generate functions taking such types as arguments, specify the CPython types
+in the signature specified on :ref:`add-function` or as or `modified-type` on
+:ref:`replace-type`.
+
+This requires a code injection using the :ref:`pyarg` type system variable to
+convert them to a C++ type for the call.
+
+CPython types can also be used as type on `add-conversion` within a
+:ref:`conversion-rule` or as target language API types on :ref:`primitive-type`.
+
+.. list-table:: CPython Types
+
+   * - Name
+     - Description
+   * - ``PyArrayObject``
+     - `NumPy`_ array
+   * - ``PyBool``
+     - Boolean value
+   * - ``PyBuffer``
+     - A type implementing the `Buffer Protocol`_
+   * - ``PyByteArray``
+     - bytearray value
+   * - ``PyBytes``
+     - Bytes object
+   * - ``PyCallable``
+     - Callable object
+   * - ``PyComplex``
+     - Complex Number Object
+   * - ``PyDate``
+     - Date value
+   * - ``PyDateTime``
+     - Date time value
+   * - ``PyDict``
+     - Dictionary
+   * - ``PyFloat``
+     - Float value
+   * - ``PyLong``
+     - Long (integer) value
+   * - ``PyObject``
+     - Plain ``PyObject`` (typically used for optional parameters)
+   * - ``PyPathLike``
+     - Path from `pathlib`_ or string. The utility function
+       ``PySide::pyPathToQString()`` (``pysideutils.h``) can be used to convert
+       it to a ``QString``.
+   * - ``PySequence``
+     - Sequence
+   * - ``PyTypeObject``
+     - Type object
+   * - ``PyUnicode``
+     - Unicode object
+   * - ``SbkChar``
+     - Unicode object of length 1 (matching the ``char`` type of C++).
+   * - ``str``
+     - Unicode object or ``None``
+
+.. _NumPy: https://numpy.org/
+.. _`Buffer Protocol`: https://docs.python.org/3/c-api/buffer.html
+.. _`pathlib`: https://docs.python.org/3/library/pathlib.html#module-pathlib
