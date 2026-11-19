@@ -144,13 +144,9 @@ class PysideBuildWheel(WheelSbomDistInfoMixin, _bdist_wheel, CommandMixin):
         build_command = self.get_finalized_command('build')
         sbom_root = Path(build_command.install_dir) / "share" / "sbom"
 
-        # The PySide6 build has multiple sbom source dirs.
+        # The PySide6 build has one sbom source dir per wheel, all bundled into this single wheel.
         if config.is_internal_pyside_build():
-            sbom_dirs = [sbom_root / d for d in ("PySide6-Essentials", "PySide6-Addons",
-                                                 "PySide6-WebEngine", "PySide6-Pdf",
-                                                 "PySide6-Tools-Essentials",
-                                                 "PySide6-Tools-Addons")]
-            return [d for d in sbom_dirs if d.is_dir()]
+            return sorted(d for d in sbom_root.glob("PySide6-*") if d.is_dir())
 
         # shiboken6 / shiboken6_generator: a single document named after the
         # package.
