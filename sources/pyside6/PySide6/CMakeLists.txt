@@ -189,10 +189,15 @@ qfp_sbom_begin_project(
     PYPI_PURL_NAME "pyside6-addons"
 )
 
+set(pyside_separate_sbom_wheel_modules "")
+foreach(wheel IN LISTS PYSIDE_SEPARATE_SBOM_WHEELS)
+    string(TOUPPER "${wheel}" wheel_upper)
+    list(APPEND pyside_separate_sbom_wheel_modules ${PYSIDE_${wheel_upper}_WHEEL_MODULES})
+endforeach()
+
 foreach(shortname IN LISTS all_module_shortnames)
     if(NOT shortname IN_LIST PYSIDE_ESSENTIALS_WHEEL_MODULES
-            AND NOT shortname IN_LIST PYSIDE_WEBENGINE_WHEEL_MODULES
-            AND NOT shortname IN_LIST PYSIDE_PDF_WHEEL_MODULES)
+            AND NOT shortname IN_LIST pyside_separate_sbom_wheel_modules)
         process_pyside_module("${shortname}")
 
         if(NOT shortname IN_LIST PYSIDE_ADDONS_WHEEL_MODULES)
@@ -226,8 +231,7 @@ qfp_sbom_add_files(PySide6AddonsPackageFiles
     INSTALL_PATH "share/PySide6${pyside_SUFFIX}/typesystems"
 )
 
-# The WebEngine and Pdf wheels get their own documents.
-foreach(wheel IN ITEMS WebEngine Pdf)
+foreach(wheel IN LISTS PYSIDE_SEPARATE_SBOM_WHEELS)
     string(TOUPPER "${wheel}" wheel_upper)
     string(TOLOWER "${wheel}" wheel_lower)
     qfp_sbom_end_project()
@@ -249,7 +253,7 @@ endforeach()
 if(QT_GENERATE_SBOM)
     if(pyside_unsassigned_sbom_modules)
         list(JOIN pyside_unsassigned_sbom_modules ", " pyside_unsassigned_sbom_modules_string)
-        message(STATUS "PySide6 SBOM: modules that were incorrectly added to an SBOM document "
+        message(WARNING "PySide6 SBOM: modules that were incorrectly added to an SBOM document "
             "(absent from all wheel lists): ${pyside_unsassigned_sbom_modules_string}")
     else()
         message(STATUS
