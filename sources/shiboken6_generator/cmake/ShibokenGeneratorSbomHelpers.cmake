@@ -193,11 +193,11 @@ function(qfp_sbom_begin_project)
     endif()
 
     if(NOT arg_CPE AND NOT arg_NO_DEFAULT_CPE)
-        qfp_sbom_compute_cpe(cpe
-            VENDOR "qt"
-            PRODUCT "qt_for_python"
-            VERSION "${arg_VERSION}"
-        )
+        set(cpe_args VENDOR "qt" PRODUCT "qt_for_python")
+        if(arg_VERSION)
+            list(APPEND cpe_args VERSION "${arg_VERSION}")
+        endif()
+        qfp_sbom_compute_cpe(cpe ${cpe_args})
         set(arg_CPE "${cpe}")
     endif()
     if(arg_CPE)

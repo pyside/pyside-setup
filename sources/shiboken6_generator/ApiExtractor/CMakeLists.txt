@@ -95,16 +95,22 @@ set(HAS_LIBXSLT 0)
 if(WrapLibXslt_FOUND AND WrapLibXml2_FOUND)
     set(HAS_LIBXSLT 1)
 
-    qfp_sbom_compute_cpe(libxml2_cpe
-        VENDOR "xmlsoft" PRODUCT "libxml2" VERSION "${WrapLibXml2_VERSION}")
-    qfp_find_package_extend_sbom(TARGETS WrapLibXml2::WrapLibXml2
-        CPE "${libxml2_cpe}"
-    )
-    qfp_sbom_compute_cpe(libxslt_cpe
-        VENDOR "xmlsoft" PRODUCT "libxslt" VERSION "${WrapLibXslt_VERSION}")
-    qfp_find_package_extend_sbom(TARGETS WrapLibXslt::WrapLibXslt
-        CPE "${libxslt_cpe}"
-    )
+    # The version might be unknown, e.g. for a libxml2 without a readable xmlversion.h. A CPE
+    # without a version would match every release, so only add one when the version is known.
+    if(WrapLibXml2_VERSION)
+        qfp_sbom_compute_cpe(libxml2_cpe
+            VENDOR "xmlsoft" PRODUCT "libxml2" VERSION "${WrapLibXml2_VERSION}")
+        qfp_find_package_extend_sbom(TARGETS WrapLibXml2::WrapLibXml2
+            CPE "${libxml2_cpe}"
+        )
+    endif()
+    if(WrapLibXslt_VERSION)
+        qfp_sbom_compute_cpe(libxslt_cpe
+            VENDOR "xmlsoft" PRODUCT "libxslt" VERSION "${WrapLibXslt_VERSION}")
+        qfp_find_package_extend_sbom(TARGETS WrapLibXslt::WrapLibXslt
+            CPE "${libxslt_cpe}"
+        )
+    endif()
 endif()
 
 if(NOT HAS_LIBXSLT)
