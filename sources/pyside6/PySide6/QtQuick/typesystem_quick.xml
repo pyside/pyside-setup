@@ -77,6 +77,11 @@
             <define-ownership class="target" owner="default"/>
           </modify-argument>
         </modify-function>
+        <modify-function signature="window()const"> <!-- Suppress return value heuristics -->
+          <modify-argument index="return">
+            <define-ownership class="target" owner="default"/>
+          </modify-argument>
+        </modify-function>
 
         <!-- TODO: Find a way to wrap `union ItemChangeData {}` -->
     </object-type>
