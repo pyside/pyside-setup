@@ -21,6 +21,10 @@ class QAsyncioTask(futures.QAsyncioFuture):
     def __init__(self, coro: collections.abc.Generator | collections.abc.Coroutine, *,
                  loop: "events.QAsyncioEventLoop | None" = None, name: str | None = None,
                  context: contextvars.Context | None = None) -> None:
+        # Like asyncio.Task, each task runs in its own copy of the
+        # context, so that ContextVar values do not leak between tasks.
+        if context is None:
+            context = contextvars.copy_context()
         super().__init__(loop=loop, context=context)
         self._source_traceback = None  # required for Python < 3.11
 
