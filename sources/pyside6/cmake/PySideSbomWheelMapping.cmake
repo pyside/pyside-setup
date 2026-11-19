@@ -92,6 +92,13 @@ set(PYSIDE_PDF_WHEEL_MODULES
     PdfWidgets
 )
 
+# The wheels, besides essentials and addons, that get their own SBOM document. Each one needs a
+# PYSIDE_<WHEEL>_WHEEL_MODULES list, where <WHEEL> is the upper-case wheel name.
+set(PYSIDE_SEPARATE_SBOM_WHEELS
+    WebEngine
+    Pdf
+)
+
 # The Qt module of each Qt tool installed by pyside-tools, in <tool>:<module> form. A tool is
 # shipped in the wheel of its module (see the module_Qt<module>() functions in
 # build_scripts/wheel_files.py), which decides the pyside-tools SBOM document that lists it.
