@@ -510,7 +510,9 @@ class CommandMixin:
                 raise e
 
         assert self.cmake is not None
-        OPTION['CMAKE'] = self.cmake.resolve()
+        # Keep absolute() instead of resolve() to support tool managers that work via symlink
+        # shims.
+        OPTION['CMAKE'] = self.cmake.absolute()
         OPTION['OPENSSL'] = self.openssl
         OPTION['SHIBOKEN_CONFIG_DIR'] = self.shiboken_config_dir
         if self.shiboken_config_dir:
