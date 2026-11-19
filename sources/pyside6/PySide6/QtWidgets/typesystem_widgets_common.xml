@@ -206,17 +206,12 @@
   <value-type name="QTableWidgetSelectionRange"/>
 
   <value-type name="QTreeWidgetItemIterator" >
-    <modify-function signature="QTreeWidgetItemIterator(QTreeWidget*,QFlags&lt;QTreeWidgetItemIterator::IteratorFlag&gt;)">
-        <modify-argument index="this">
-            <parent index="1" action="add"/>
-        </modify-argument>
-    </modify-function>
-
     <add-function signature="__iter__()" return-type="PyObject*">
       <inject-code class="target" position="beginning">
         <insert-template name="__iter__"/>
       </inject-code>
     </add-function>
+    <!-- Cannot use standard __next__ template since the iterator does not have atEnd() -->
     <add-function signature="__next__()" return-type="PyObject*">
       <inject-code class="target" position="beginning" file="../glue/qtwidgets.cpp" snippet="qtreewidgetitemiterator-next"/>
     </add-function>

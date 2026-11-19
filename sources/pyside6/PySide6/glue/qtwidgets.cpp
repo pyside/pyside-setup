@@ -7,16 +7,16 @@
  ********************************************************************/
 
 // @snippet qtreewidgetitemiterator-next
-if (**%CPPSELF) {
-    QTreeWidgetItemIterator *%0 = new QTreeWidgetItemIterator((*%CPPSELF)++);
-    %PYARG_0 = %CONVERTTOPYTHON[QTreeWidgetItemIterator *](%0);
+auto &iterator = *%CPPSELF;
+if (*iterator) {
+    %PYARG_0 = %CONVERTTOPYTHON[QTreeWidgetItemIterator](iterator);
+    ++iterator;
 }
 // @snippet qtreewidgetitemiterator-next
 
 // @snippet qtreewidgetitemiterator-value
 QTreeWidgetItem *%0 = %CPPSELF.operator *();
 %PYARG_0 = %CONVERTTOPYTHON[QTreeWidgetItem *](%0);
-Shiboken::Object::releaseOwnership(%PYARG_0);
 // @snippet qtreewidgetitemiterator-value
 
 // @snippet qgraphicsitem
