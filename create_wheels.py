@@ -682,6 +682,30 @@ def module_names_from_cmake_list(cmake_text: str, list_name: str) -> set[str]:
     return set(match.group(1).split())
 
 
+def python_wheel_modules() -> dict[str, set[str]]:
+    """Return the module short names of each wheel_files_pyside_<wheel>() function, by wheel."""
+    prefix = "wheel_files_pyside_"
+    wheels = {}
+    for func_name in dir(build_scripts.wheel_files):
+        if not func_name.startswith(prefix):
+            continue
+        wheel = func_name.removeprefix(prefix)
+        func = getattr(build_scripts.wheel_files, func_name)
+        wheels[wheel] = module_names_from_wheel_function(func)
+    return wheels
+
+
+def cmake_wheel_modules(cmake_text: str) -> dict[str, set[str]]:
+    """Return the module names of each PYSIDE_<WHEEL>_WHEEL_MODULES list, by lower-case wheel."""
+    pattern = r"set\(\s*PYSIDE_(\w+)_WHEEL_MODULES\b(.*?)\)"
+    wheels = {}
+    for wheel, modules in re.findall(pattern, cmake_text, re.DOTALL):
+        if wheel == "QT_TOOLS":
+            continue
+        wheels[wheel.lower()] = set(modules.split())
+    return wheels
+
+
 def check_wheel_module_lists_consistency() -> list[str]:
     """Return the differences between the per-wheel module lists of Python and CMake.
 
@@ -689,29 +713,48 @@ def check_wheel_module_lists_consistency() -> list[str]:
     PYSIDE_<WHEEL>_WHEEL_MODULES lists in `mapping_cmake` control how the
     built modules are split across the per-wheel SBOM documents. The two must
     stay in sync, otherwise the SBOM documents stop matching the wheels.
+
+    Each wheel_files_pyside_<wheel>() function also needs a WHEEL_SBOM_DIRS entry, and each
+    wheel other than Essentials and Addons needs to be in PYSIDE_SEPARATE_SBOM_WHEELS, so that
+    the wheel gets its own SBOM document.
     """
     mapping_cmake = Path("sources/pyside6/cmake/PySideSbomWheelMapping.cmake")
     if not mapping_cmake.is_file():
         return [f"Could not find '{mapping_cmake}' to check the per-wheel module lists."]
 
     cmake_text = mapping_cmake.read_text(encoding="utf-8")
+    python_wheels = python_wheel_modules()
+    cmake_wheels = cmake_wheel_modules(cmake_text)
+    separate_sbom_wheels = {wheel.lower() for wheel in module_names_from_cmake_list(
+        cmake_text, "PYSIDE_SEPARATE_SBOM_WHEELS")}
+    sbom_dir_wheels = {wheel.lower().removeprefix("pyside6_") for wheel in WHEEL_SBOM_DIRS}
     problems = []
 
-    for wheel_name, py_func, cmake_list in (
-        ("essentials", wheel_files_pyside_essentials, "PYSIDE_ESSENTIALS_WHEEL_MODULES"),
-        ("addons", wheel_files_pyside_addons, "PYSIDE_ADDONS_WHEEL_MODULES"),
-        ("webengine", wheel_files_pyside_webengine, "PYSIDE_WEBENGINE_WHEEL_MODULES"),
-        ("pdf", wheel_files_pyside_pdf, "PYSIDE_PDF_WHEEL_MODULES"),
-    ):
-        python_modules = module_names_from_wheel_function(py_func)
-        cmake_modules = module_names_from_cmake_list(cmake_text, cmake_list)
+    for wheel in sorted(cmake_wheels.keys() - python_wheels.keys()):
+        problems.append(f"PYSIDE_{wheel.upper()}_WHEEL_MODULES in {mapping_cmake} has no "
+                        f"matching wheel_files_pyside_{wheel}() function in "
+                        "build_scripts/wheel_files.py.")
 
-        only_in_python = python_modules - cmake_modules
-        only_in_cmake = cmake_modules - python_modules
+    for wheel, python_modules in sorted(python_wheels.items()):
+        cmake_list = f"PYSIDE_{wheel.upper()}_WHEEL_MODULES"
+        if wheel not in cmake_wheels:
+            problems.append(f"The PySide6 {wheel} wheel has no {cmake_list} list in "
+                            f"{mapping_cmake}.")
+            continue
 
+        if wheel not in ("essentials", "addons") and wheel not in separate_sbom_wheels:
+            problems.append(f"The PySide6 {wheel} wheel is missing from "
+                            f"PYSIDE_SEPARATE_SBOM_WHEELS in {mapping_cmake}.")
+
+        if wheel not in sbom_dir_wheels:
+            problems.append(f"The PySide6 {wheel} wheel has no entry in WHEEL_SBOM_DIRS "
+                            "in create_wheels.py.")
+
+        only_in_python = python_modules - cmake_wheels[wheel]
+        only_in_cmake = cmake_wheels[wheel] - python_modules
         if only_in_python or only_in_cmake:
-            problem = (f"The PySide6 {wheel_name} module list is out of sync between Python "
-                       f"(wheel_files_pyside_{wheel_name} in build_scripts/wheel_files.py) and "
+            problem = (f"The PySide6 {wheel} module list is out of sync between Python "
+                       f"(wheel_files_pyside_{wheel} in build_scripts/wheel_files.py) and "
                        f"CMake ({cmake_list} in {mapping_cmake}):")
             if only_in_python:
                 problem += f"\n  only in Python: {sorted(only_in_python)}"
