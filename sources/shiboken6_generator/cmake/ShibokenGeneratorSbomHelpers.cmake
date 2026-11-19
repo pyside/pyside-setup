@@ -976,6 +976,13 @@ function(qfp_sbom_get_default_sbom_args target out_var)
     set(${out_var} "${sbom_args}" PARENT_SCOPE)
 endfunction()
 
+# Replaces the '+' of versions like '<major.minor.patch>+commercial', because CPE strings only
+# allow it escaped, but it's cleaner to have some unescaped char.
+function(qfp_sbom_sanitize_version_for_cpe out_var version)
+    string(REPLACE "+" "-" version "${version}")
+    set(${out_var} "${version}" PARENT_SCOPE)
+endfunction()
+
 # Constructs a CPE string based on the passed vendor, product and version.
 function(qfp_sbom_compute_cpe out_var)
     set(opt_args "")
@@ -1008,7 +1015,8 @@ function(qfp_sbom_compute_cpe out_var)
     endif()
 
     if(arg_VERSION)
-        list(APPEND cpe_args VERSION "${arg_VERSION}")
+        qfp_sbom_sanitize_version_for_cpe(cpe_version "${arg_VERSION}")
+        list(APPEND cpe_args VERSION "${cpe_version}")
     endif()
 
     _qt_internal_sbom_compute_security_cpe(cpe ${cpe_args})
