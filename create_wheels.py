@@ -28,6 +28,7 @@ from build_scripts.wheel_files import (ModuleData,  # type: ignore
                                        wheel_files_pyside_essentials,
                                        wheel_files_pyside_webengine,
                                        wheel_files_pyside_pdf)
+from build_scripts import PYSIDE_WINDOWS_BIN_TOOLS
 from build_scripts.log import log
 from build_scripts.utils import available_pyside_tools, parse_cmake_conf_assignments_by_key
 
@@ -766,7 +767,8 @@ def check_wheel_module_lists_consistency() -> list[str]:
 
 
 def check_qt_tool_wheel_modules_consistency() -> list[str]:
-    """Return the Qt tools that are assigned to a different module in CMake than in Python.
+    """Return the Qt tools that are assigned to a different module in CMake than in Python,
+    or that are not assigned to any module in CMake.
 
     The module_Qt<module>() functions in build_scripts/wheel_files.py decide which wheel ships a
     Qt tool, while PYSIDE_QT_TOOLS_WHEEL_MODULES decides which per-wheel pyside-tools SBOM
@@ -801,6 +803,12 @@ def check_qt_tool_wheel_modules_consistency() -> list[str]:
         if not any(fnmatch(name, pattern) for name in names for pattern in patterns):
             problems.append(f"{assignment}, but module_Qt{module}() in "
                             "build_scripts/wheel_files.py doesn't ship it.")
+
+    # PYSIDE_WINDOWS_BIN_TOOLS lists all the Qt tools, on all platforms.
+    mapped_tools = {entry.partition(":")[0] for entry in entries}
+    for tool in sorted(set(PYSIDE_WINDOWS_BIN_TOOLS) - mapped_tools):
+        problems.append(f"The Qt tool '{tool}' is shipped (see build_scripts/__init__.py), but "
+                        f"is missing from PYSIDE_QT_TOOLS_WHEEL_MODULES in {mapping_cmake}.")
 
     return problems
 
