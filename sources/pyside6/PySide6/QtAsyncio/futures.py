@@ -41,8 +41,10 @@ class QAsyncioFuture():
 
         self._cancel_message: str | None = None
 
-        # List of callbacks that are called when the future is done.
-        self._callbacks: list[Callable] = list()
+        # Callbacks that are called when the future is done, each with the
+        # context to run it in. The (callback, context) pairs match
+        # asyncio.Future, which third-party libraries such as anyio read.
+        self._callbacks: list[tuple[Callable, contextvars.Context]] = list()
 
     def __await__(self):
         if not self.done():
@@ -54,11 +56,10 @@ class QAsyncioFuture():
 
     __iter__ = __await__
 
-    def _schedule_callbacks(self, context: contextvars.Context | None = None):
+    def _schedule_callbacks(self):
         """ A future can optionally have callbacks that are called when the future is done. """
-        for cb in self._callbacks:
-            self._loop.call_soon(
-                cb, self, context=context if context else self._context)
+        for cb, context in self._callbacks:
+            self._loop.call_soon(cb, self, context=context)
 
     def result(self) -> Any | Exception:
         if self._state == QAsyncioFuture.FutureState.DONE_WITH_RESULT:
@@ -90,15 +91,17 @@ class QAsyncioFuture():
 
     def add_done_callback(self, cb: Callable, *,
                           context: contextvars.Context | None = None) -> None:
+        if context is None:
+            context = contextvars.copy_context()
         if self.done():
-            self._loop.call_soon(
-                cb, self, context=context if context else self._context)
+            self._loop.call_soon(cb, self, context=context)
         else:
-            self._callbacks.append(cb)
+            self._callbacks.append((cb, context))
 
     def remove_done_callback(self, cb: Callable) -> int:
         original_len = len(self._callbacks)
-        self._callbacks = [_cb for _cb in self._callbacks if _cb != cb]
+        self._callbacks = [(_cb, _context) for _cb, _context in self._callbacks
+                           if _cb != cb]
         return original_len - len(self._callbacks)
 
     def cancel(self, msg: str | None = None) -> bool:
