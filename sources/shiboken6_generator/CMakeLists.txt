@@ -10,6 +10,7 @@ include(cmake/ShibokenGeneratorSetup.cmake)
 
 get_filename_component(qfp_license_dir_path "${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSES" REALPATH)
 qfp_sbom_begin_project(
+    SBOM_PROJECT_NAME "shiboken6-generator"
     LICENSE_DIR_PATHS "${qfp_license_dir_path}"
     INSTALL_SBOM_DIR "share/sbom/shiboken6_generator"
     PYPI_PURL_NAME "shiboken6-generator"
