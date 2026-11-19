@@ -43,9 +43,11 @@ class QAsyncioTask(futures.QAsyncioFuture):
         # the task will await its completion (or exception). If the task is
         # cancelled while it awaits a future, this future must also be
         # cancelled in order for the cancellation to be successful.
-        self._future_to_await: asyncio.Future | None = None
+        # The field names _fut_waiter and _must_cancel match asyncio.Task,
+        # which third-party libraries such as anyio read.
+        self._fut_waiter: asyncio.Future | None = None
 
-        self._cancelled = False  # PYSIDE-2644; see _step
+        self._must_cancel = False  # PYSIDE-2644; see _step
         self._cancel_count = 0
         self._cancel_message: str | None = None
         # Store traceback in case of Exception. Useful when exception happens in coroutine
@@ -91,11 +93,11 @@ class QAsyncioTask(futures.QAsyncioFuture):
         if self.done():
             return
         result = None
-        self._future_to_await = None
+        self._fut_waiter = None
 
-        if self._cancelled:
+        if self._must_cancel:
             exception_or_future = asyncio.CancelledError(self._cancel_message)
-            self._cancelled = False
+            self._must_cancel = False
 
         if asyncio.futures.isfuture(exception_or_future):
             try:
@@ -138,9 +140,9 @@ class QAsyncioTask(futures.QAsyncioFuture):
                 # The task will await the completion (or exception) of this
                 # future. If the task is cancelled while it awaits a future,
                 # this future must also be cancelled.
-                self._future_to_await = result
+                self._fut_waiter = result
 
-                if self._cancelled:
+                if self._must_cancel:
                     # PYSIDE-2644: If the task was cancelled at this step and a
                     # new future was created to be awaited, then it should be
                     # cancelled as well. Otherwise, in some scenarios like a
@@ -149,7 +151,8 @@ class QAsyncioTask(futures.QAsyncioFuture):
                     # in this loop despite having been cancelled. This bad
                     # timing can occur especially if the first future finishes
                     # very quickly.
-                    self._future_to_await.cancel(self._cancel_message)
+                    if self._fut_waiter.cancel(self._cancel_message):
+                        self._must_cancel = False
             elif result is None:
                 # If no future was yielded, we schedule the step function again
                 # without any arguments.
@@ -205,11 +208,13 @@ class QAsyncioTask(futures.QAsyncioFuture):
             return False
         self._cancel_count += 1
         self._cancel_message = msg
-        if self._future_to_await is not None:
-            # A task that is awaiting a future must also cancel this future in
-            # order for the cancellation to be successful.
-            self._future_to_await.cancel(msg)
-        self._cancelled = True  # PYSIDE-2644; see _step
+        # A task that is awaiting a future must also cancel this future in
+        # order for the cancellation to be successful. If there is no such
+        # future, or it is already done, cancel the coroutine at the next
+        # step instead.
+        if self._fut_waiter is not None and self._fut_waiter.cancel(msg):
+            return True
+        self._must_cancel = True  # PYSIDE-2644; see _step
         return True
 
     def uncancel(self) -> int:
