@@ -1,6 +1,7 @@
 PYSIDE_TEST(bug_2790.py)
 PYSIDE_TEST(bug_2799.py)
 PYSIDE_TEST(qasyncio_test.py)
+PYSIDE_TEST(qasyncio_test_cancel_state.py)
 PYSIDE_TEST(qasyncio_test_cancel_task.py)
 PYSIDE_TEST(qasyncio_test_cancel_taskgroup.py)
 PYSIDE_TEST(qasyncio_test_chain.py)
