@@ -49,6 +49,24 @@ class QAsyncioTestCaseCancelTask(unittest.TestCase):
 
         self.assertEqual(output_real, output_expected)
 
+    def test_cancel_is_not_reported_as_exception(self):
+        reported_exceptions = []
+
+        async def main():
+            asyncio.get_running_loop().set_exception_handler(
+                lambda context: reported_exceptions.append(context))
+            task = asyncio.create_task(asyncio.sleep(10))
+            await asyncio.sleep(0)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        QtAsyncio.run(main(), keep_running=False)
+
+        self.assertEqual(reported_exceptions, [])
+
 
 if __name__ == '__main__':
     unittest.main()
