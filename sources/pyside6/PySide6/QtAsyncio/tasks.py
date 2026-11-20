@@ -164,7 +164,7 @@ class QAsyncioTask(futures.QAsyncioFuture):
         finally:
             asyncio._leave_task(self._loop, self)  # type: ignore[arg-type]
 
-            if self._exception:
+            if self._exception and not self.cancelled():
                 message = str(self._exception)
                 if message == "None":
                     message = ""
