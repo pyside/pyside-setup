@@ -320,12 +320,56 @@ class ExactEnumerator:
     def get_signature(func):
         return get_sig(func)
 
-    def function(self, func_name, func, decorator=None):
+    @staticmethod
+    def property_setter_signature(signatures):
+        orig_signatures = signatures
+        # Property.setter should accept 2 arguments: self and value.
+        signatures = list(filter(lambda s: len(s.parameters) == 2, signatures))
+        if len(signatures) == 1:
+            return signatures[0]
+        elif signatures:
+            # If there are several signatures, their types can be combined.
+            names = set()
+            types_ = []
+            for signature in signatures:
+                it = iter(signature.parameters.values())
+                next(it)
+                param = next(it)
+                names.add(param.name)
+                types_.append(param.annotation)
+                if (param.kind not in (inspect.Parameter.POSITIONAL_ONLY,
+                                       inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                        or signature.return_annotation is not None):
+                    # Incorrect overload.
+                    # We return the original overloads (currently, there are none).
+                    return orig_signatures
+            # If the names match, we use it;
+            # otherwise, we use the name `arg__1`, since another name might cause confusion.
+            if len(names) == 1:
+                name = names.pop()
+            else:
+                name = "arg__1"
+            # union types
+            type_ = types_[0]
+            for t in types_[1:]:
+                type_ |= t
+            return inspect.Signature(
+                (inspect.Parameter("self", inspect.Parameter.POSITIONAL_ONLY),
+                 inspect.Parameter(name, inspect.Parameter.POSITIONAL_ONLY, annotation=type_)),
+                return_annotation=None)
+        # If there are no suitable overloads, we return the original overloads
+        # (currently, there are none).
+        return orig_signatures
+
+    def function(self, func_name, func, decorator=None, is_property_setter=False):
         self.func = func    # for is_method()
         ret = self.result_type()
         if decorator in self.collision_track:
             decorator = f"builtins.{decorator}"
         signature = self.get_signature(func, decorator)
+        if is_property_setter and isinstance(signature, list):
+            # PYSIDE-3530: Remove typing.overload and incorrect signatures for property.setter.
+            signature = self.property_setter_signature(signature)
         incon_err = False
         if is_inconsistent_overload(signature):
             incon_err = True
@@ -345,7 +389,7 @@ class ExactEnumerator:
     def fproperty(self, prop_name, prop):
         ret = self.function(prop_name, prop.fget, type(prop).__qualname__)
         if prop.fset:
-            ret.update(self.function(prop_name, prop.fset, f"{prop_name}.setter"))
+            ret.update(self.function(prop_name, prop.fset, f"{prop_name}.setter", True))
         if prop.fdel:
             ret.update(self.function(prop_name, prop.fdel, f"{prop_name}.deleter"))
         return ret
