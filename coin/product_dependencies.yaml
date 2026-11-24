@@ -1,3 +1,3 @@
 dependencies:
   ../../qt/qt5:
-    ref: "6.12"
+    ref: "88bc9efbe213208113439d7cb3e119469784f363"
