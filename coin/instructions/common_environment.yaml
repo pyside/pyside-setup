@@ -57,7 +57,7 @@ instructions:
             not_equals_value: AARCH64
     - type: EnvironmentVariable
       variableName: PYTHON3_PATH
-      variableValue: "{{ index .Env \"PYTHON3.14.10-64_PATH\"}}"
+      variableValue: "{{ index .Env \"PYTHON3.14.3-64_PATH\"}}"
       enable_if:
         condition: and
         conditions:
@@ -180,7 +180,7 @@ instructions:
          equals_value: Windows
     - type: PrependToEnvironmentVariable
       variableName: PATH
-      variableValue: "{{ index .Env \"PYTHON3.14.10-64_PATH\"}}\\Scripts;"
+      variableValue: "{{ index .Env \"PYTHON3.14.3-64_PATH\"}}\\Scripts;"
       enable_if:
          condition: property
          property: host.os
@@ -222,7 +222,7 @@ instructions:
          equals_value: ICC_18
     - type: EnvironmentVariable
       variableName: PYTHON3_PATH
-      variableValue: "{{ index .Env \"PYTHON3.14.10-64_PATH\"}}"
+      variableValue: "{{ index .Env \"PYTHON3.14.3-64_PATH\"}}"
       enable_if:
           condition: and
           conditions:

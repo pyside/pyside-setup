@@ -137,7 +137,7 @@ def get_python_version(ci):
     if ci.TARGET_OS == "Linux" and ci.HOST_ARCH != "aarch64":
         python_ver = "3.12"
     elif ci.TARGET_OS == "Windows":
-        python_ver = "3.14.10"
+        python_ver = "3.14.3"
     return python_ver
 
 
