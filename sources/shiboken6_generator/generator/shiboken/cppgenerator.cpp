@@ -563,11 +563,11 @@ void CppGenerator::generateIncludes(TextStream &s, const GeneratorContext &class
     s << "\n// main header\n" << "#include \""
       << HeaderGenerator::headerFileNameForContext(classContext) << "\"\n";
 
-    // Wrappers from which overrides are re-used.
-    QSet<QString> wrapperIncludes;
+    // Wrappers from which overrides are re-used (ordered).
+    std::set<QString> wrapperIncludes;
     for (const auto &f : getReusedOverridenFunctions(metaClass))
         wrapperIncludes.insert(ShibokenGenerator::headerFileNameForClass(f->ownerClass()));
-    if (!wrapperIncludes.isEmpty()) {
+    if (!wrapperIncludes.empty()) {
         s  << "\n// Wrappers providing overrides\n";
         for (const auto &wrapperInclude : std::as_const(wrapperIncludes))
             s << "#include \"" << wrapperInclude << "\"\n";
