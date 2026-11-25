@@ -22,7 +22,8 @@ Rectangle {
             objectName: "buttonMouseArea"
             anchors.fill: parent
             onEntered: {
-                    proxy.receivedObject(proxy.getObject().objectName)
+                    let obj = proxy.getObject()
+                    proxy.receivedObject(obj?.objectName ?? "None")
             }
         }
         Text {
