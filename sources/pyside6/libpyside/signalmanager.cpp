@@ -462,8 +462,11 @@ static int callPythonMetaMethodHelper(const QByteArrayList &paramTypes,
     if (PyErr_Occurred() != nullptr || retval.isNull())
         return CallResult::CallOtherError;
 
-    if (retval != Py_None && retConverter.has_value())
+    // PYSIDE-3531: Make sure to convert Py_None to nullptr.
+    if (retConverter.has_value()
+        && (retval != Py_None || retConverter->conversionType() == SpecificConverter::PointerConversion)) {
         retConverter.value().toCpp(retval, args[0]);
+    }
     return CallResult::CallOk;
 }
 

@@ -27,9 +27,13 @@ class ProxyObject(QObject):
         super().__init__()
         self._o = None
         self._receivedName = ""
+        self.emit_none = False
 
     @Slot(result='QObject*')
     def getObject(self):
+        if self.emit_none:
+            return None
+
         if self._o:
             return self._o
 
@@ -58,6 +62,11 @@ class TestConnectionWithInvalidSignature(TimedQGuiApplication):
         view.show()
         button.entered.emit()
         self.assertEqual(proxy._receivedName, "PySideObject")
+
+        # PYSIDE-3531: Test whether "None" is correctly converted to nullptr/undefined
+        proxy.emit_none = True
+        button.entered.emit()
+        self.assertEqual(proxy._receivedName, "None")
 
 
 if __name__ == '__main__':
