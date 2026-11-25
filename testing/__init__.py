@@ -20,7 +20,8 @@ builtins.orig_print = builtins.print
 
 
 def print_flushed(*args, **kw):
-    orig_print(*args, **kw, flush=True)
+    kw.setdefault("flush", True)
+    builtins.orig_print(*args, **kw)
 
 
 builtins.print = print_flushed
