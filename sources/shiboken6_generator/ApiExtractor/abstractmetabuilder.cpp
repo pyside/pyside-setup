@@ -2241,7 +2241,7 @@ AbstractMetaFunctionPtr
                 || functionName.startsWith(u"qt_meta")) {
                 return {};
             }
-            if (functionName == u"metaObject" && className != u"QObject")
+            if (functionName == u"metaObject" && className != u"QObject" && className != u"QMetaType")
                 return {};
         }
     } // PySide extensions

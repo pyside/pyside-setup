@@ -38,6 +38,7 @@ class qmetatype_test(unittest.TestCase):
         meta_type = QMetaType(QObject)
         self.assertTrue(meta_type.isValid())
         self.assertEqual(meta_type.name(), "QObject*")
+        self.assertEqual(meta_type.metaObject().className(), "QObject")
 
 
 if __name__ == '__main__':
