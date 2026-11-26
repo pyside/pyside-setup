@@ -214,7 +214,7 @@ class TypeStateFreeThreadedTest(unittest.TestCase):
         def reader():
             while not stop.is_set():
                 for name in list(names):
-                    mo = QMetaType.metaObjectForType(QMetaType.fromName(f"{name}*".encode()).id())
+                    mo = QMetaType.fromName(f"{name}*".encode()).metaObject()
                     if mo is None or mo.className() != name:
                         wrong.append(name)
 
