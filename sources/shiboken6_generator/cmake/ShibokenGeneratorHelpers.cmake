@@ -13,6 +13,12 @@ macro(setup_clang)
     endif()
 
     qfp_find_package(Clang CONFIG REQUIRED PROVIDED_TARGETS libclang)
+
+    # LLVMConfig.cmake can create LibXml2::LibXml2 in the qfp_find_package call above (Yocto
+    # llvm-native does it), and ApiExtractor would then use the non-promoted imported target.
+    # Make sure to promote it to global.
+    qfp_promote_3rd_party_provided_target_and_3rd_party_deps_to_global(LibXml2::LibXml2)
+
     # Need to explicitly handle the version check, because the Clang package doesn't.
     if (LLVM_PACKAGE_VERSION AND LLVM_PACKAGE_VERSION VERSION_LESS "9.0")
         message(FATAL_ERROR "You need LLVM version 9.0 or greater to build.")
