@@ -906,7 +906,7 @@ and may contain a :ref:`modify-function` child node.
         <function signature="..." rename="..." since="..."
                   allow-thread="true | auto | false"
                   doc-file = "..."
-                  exception-handling="off | auto-off | auto-on | on"
+                  exception-handling="no | false | auto-off | auto-on | yes | true"
                   overload-number="number"
                   snake-case="yes | no | both" />
     </typesystem>
