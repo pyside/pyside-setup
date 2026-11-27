@@ -10,6 +10,9 @@ include(@Qt5Help_DIR@/global/qt-module-defaults.qdocconf)
 
 navigation.homepage = https://doc.qt.io/qtforpython-6/
 
+# Enable Free Threading classes
+defines = Py_GIL_DISABLED
+
 sources.fileextensions = "*.cpp"
 headers.fileextensions = "*.h"
 
