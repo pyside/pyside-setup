@@ -31,7 +31,7 @@ class QAsyncioTestCase(unittest.TestCase):
         outputs_real = []
 
         # Run the code without QAsyncioEventLoopPolicy
-        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+        asyncio.set_event_loop_policy(None)
         asyncio.run(self.sleep(outputs_expected))
 
         # Run the code with QAsyncioEventLoopPolicy and QtEventLoop
@@ -45,7 +45,7 @@ class QAsyncioTestCase(unittest.TestCase):
         outputs_real = []
 
         # Run the code without QAsyncioEventLoopPolicy
-        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+        asyncio.set_event_loop_policy(None)
         asyncio.run(self.gather(outputs_expected))
 
         # Run the code with QAsyncioEventLoopPolicy and QtEventLoop

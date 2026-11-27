@@ -58,7 +58,7 @@ class QAsyncioTestCaseQueues(unittest.TestCase):
             # Run the code without QAsyncioEventLoopPolicy
             random.seed(17)
             start = time.perf_counter()
-            asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+            asyncio.set_event_loop_policy(None)
             asyncio.run(self.main(outputs_expected1, outputs_expected2, *arg))
             end_expected = time.perf_counter() - start
 
