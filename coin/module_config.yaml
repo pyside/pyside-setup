@@ -37,6 +37,9 @@ accept_configuration:
         - condition: property
           property: host.osVersion
           not_equals_value: Windows_11_22H2
+        - condition: property
+          property: features
+          not_contains_value: FreeThreading
     - condition: and
       conditions:
         - condition: property
@@ -112,6 +115,10 @@ accept_configuration:
         - condition: property
           property: target.compiler
           equals_value: Mingw
+        - condition: property
+          property: features
+          not_contains_value: FreeThreading
+
 machine_type:
   Build:
     cores: 8
