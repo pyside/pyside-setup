@@ -378,7 +378,7 @@ namespace or a global function. It may contain :ref:`modify-argument` nodes.
      <container-type>
          <declare-function signature="..." return-type="..." since="..."
                            allow-thread="true | auto | false"
-                           exception-handling="off | auto-off | auto-on | on"
+                           exception-handling="no | false | auto-off | auto-on | yes | true"
                            overload-number="number"
                            snake-case="yes | no | both"/>
      </container-type>
