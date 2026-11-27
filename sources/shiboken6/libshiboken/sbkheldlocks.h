@@ -105,10 +105,16 @@ void lockDetached(Mutex &mutex)
     }
 }
 
-// A one-time init that runs Python: with a plain flag, two module inits would
-// both run it, or one would use what the other half did. The first thread
-// runs it, others wait detached (it may stop the world), a nested call passes.
-// Not a raw lock: Python runs under it.
+/*!
+    \struct Shiboken::OnceFlag
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    A one-time init that runs Python: with a plain flag, two module inits would
+    both run it, or one would use what the other half did. The first thread
+    runs it, others wait detached (it may stop the world), a nested call passes.
+    Not a raw lock: Python runs under it.
+*/
 struct OnceFlag
 {
     std::mutex mutex;
@@ -123,11 +129,17 @@ struct OnceFlag
     }
 };
 
+/*!
+    \class Shiboken::OnceGate
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    finished(): whether the init got through, else the first pass counts;.
+    a failed init leaves the gate in place.
+*/
 class OnceGate
 {
 public:
-    // finished(): whether the init got through, else the first pass counts;
-    // a failed init leaves the gate in place
     explicit OnceGate(OnceFlag &flag, bool (*finished)() = nullptr)
         : m_finished(finished)
     {
@@ -163,11 +175,17 @@ private:
     bool (*m_finished)() = nullptr;
 };
 
-// For a function-local static whose initializer can reach Python. A second
-// thread waits on the guard of a C++ static attached, so a stop-the-world or a
-// lock it holds stops the first thread for good. Here the first thread creates
-// the value and the others wait detached. A null result is kept, as by the
-// static; a nested first use in the creating thread deadlocks, as there.
+/*!
+    \class Shiboken::OnceValue
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    For a function-local static whose initializer can reach Python. A second
+    thread waits on the guard of a C++ static attached, so a stop-the-world or a
+    lock it holds stops the first thread for good. Here the first thread creates
+    the value and the others wait detached. A null result is kept, as by the
+    static; a nested first use in the creating thread deadlocks, as there.
+*/
 template <typename T>
 class OnceValue
 {
@@ -202,7 +220,13 @@ private:
     std::mutex m_mutex;
 };
 
-// A function-local static string, interned on first use through OnceValue
+/*!
+    \class Shiboken::OnceString
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    A function-local static string, interned on first use through OnceValue
+*/
 class OnceString
 {
 public:

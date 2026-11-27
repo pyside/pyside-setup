@@ -100,12 +100,18 @@ static std::mutex &moduleRegistryMutex()
     return mutex;
 }
 
-// Module execs run at once on free-threaded builds and insert into the same
-// maps. Map work only.
+/*!
+    \class ModuleRegistryGuard
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    Module execs run at once on free-threaded builds and insert into the same
+    maps. Map work only.
+*/
 class ModuleRegistryGuard
 {
 public:
-    LIBSHIBOKEN_DISABLE_COPY(ModuleRegistryGuard)
+    LIBSHIBOKEN_DISABLE_COPY_MOVE(ModuleRegistryGuard)
 
     ModuleRegistryGuard()
     {
@@ -113,6 +119,8 @@ public:
                 Shiboken::FreeThreading::Option::ModuleRegistryLock))
             m_guard.emplace(moduleRegistryMutex());
     }
+
+    ~ModuleRegistryGuard() = default;
 
 private:
     std::optional<Shiboken::TrackedGuard<std::mutex, Shiboken::RawLock::ModuleRegistry>> m_guard;

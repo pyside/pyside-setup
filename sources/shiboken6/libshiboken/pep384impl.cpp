@@ -1035,12 +1035,18 @@ static std::mutex &setpMutex()
     return mutex;
 }
 
-// Imports and QEnum classes in any thread create enums; conversions read
-// their private data. Map work only.
+/*!
+    \class SetpGuard
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    Imports and QEnum classes in any thread create enums; conversions read
+    their private data. Map work only.
+*/
 class SetpGuard
 {
 public:
-    LIBSHIBOKEN_DISABLE_COPY(SetpGuard)
+    LIBSHIBOKEN_DISABLE_COPY_MOVE(SetpGuard)
 
     SetpGuard()
     {
@@ -1048,6 +1054,8 @@ public:
                 Shiboken::FreeThreading::Option::EnumPrivateLock))
             m_guard.emplace(setpMutex());
     }
+
+    ~SetpGuard() = default;
 
 private:
     std::optional<Shiboken::TrackedGuard<std::mutex, Shiboken::RawLock::EnumPrivate>> m_guard;

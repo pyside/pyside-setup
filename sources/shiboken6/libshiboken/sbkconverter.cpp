@@ -46,12 +46,18 @@ static std::mutex &convertersMutex()
     return mutex;
 }
 
-// Names and negative cache: imports and runtime types add names while other
-// threads look them up. Map work only.
+/*!
+    \class ConverterRegistryGuard
+    \ingroup freethreading
+    \inmodule libshiboken
+
+    Names and negative cache: imports and runtime types add names while other
+    threads look them up. Map work only.
+*/
 class ConverterRegistryGuard
 {
 public:
-    LIBSHIBOKEN_DISABLE_COPY(ConverterRegistryGuard)
+    LIBSHIBOKEN_DISABLE_COPY_MOVE(ConverterRegistryGuard)
 
     ConverterRegistryGuard()
     {
@@ -59,6 +65,8 @@ public:
                 Shiboken::FreeThreading::Option::ConverterRegistryLock))
             m_guard.emplace(convertersMutex());
     }
+
+    ~ConverterRegistryGuard() = default;
 
 private:
     std::optional<Shiboken::TrackedGuard<std::mutex, Shiboken::RawLock::ConverterRegistry>> m_guard;
